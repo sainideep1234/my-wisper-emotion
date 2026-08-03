@@ -11,6 +11,11 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install System Dependencies
+        run: brew install portaudio cmake
 
       - uses: oven-sh/setup-bun@v2
 
