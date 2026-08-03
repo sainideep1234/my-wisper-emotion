@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import {
   Download,
@@ -31,6 +31,14 @@ export default function LandingPage() {
     { label: 'Happy', color: '#34D399', hint: 'Expressive tone…' },
     { label: 'Thoughtful', color: '#94A3B8', hint: 'Steady pace…' },
   ];
+
+  useEffect(() => {
+    if (!isSimulatingRecord) return;
+    const interval = setInterval(() => {
+      setSimulatedEmotionIndex((prev) => (prev + 1) % emotionModes.length);
+    }, 500);
+    return () => clearInterval(interval);
+  }, [isSimulatingRecord, emotionModes.length]);
 
   const modelsList = [
     {
@@ -171,7 +179,7 @@ export default function LandingPage() {
                     if (!isSimulatingRecord) {
                       setIsSimulatingRecord(true);
                     } else {
-                      setSimulatedEmotionIndex((prev) => (prev + 1) % emotionModes.length);
+                      setIsSimulatingRecord(false);
                     }
                   }}
                   className="relative group cursor-pointer select-none transition-all duration-300 transform hover:scale-[1.02]"
