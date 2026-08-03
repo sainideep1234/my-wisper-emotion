@@ -177,22 +177,13 @@ export default function LandingPage() {
                   className="relative group cursor-pointer select-none transition-all duration-300 transform hover:scale-[1.02]"
                   title="Click to cycle desktop app live emotion simulation"
                 >
-                  {/* Pulsing Aura */}
-                  {isSimulatingRecord && (
-                    <div
-                      className="absolute -inset-1 rounded-full border animate-[aura-wave_1.5s_cubic-bezier(0.4,0,0.2,1)_infinite] pointer-events-none"
-                      style={{ borderColor: `${currentEmotion.color}55` }}
-                    />
-                  )}
+                  {/* Removed Pulsing Aura to align with minimal styling */}
 
                   {/* Floating Pill Container */}
                   <div
-                    className="relative px-4 py-2 rounded-full flex items-center justify-between gap-4 bg-[#0a0c10]/95 border shadow-[0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-xl transition-all duration-300"
+                    className="desktop-floating-pill relative px-4 py-2 rounded-full flex items-center justify-between gap-4 transition-all duration-300"
                     style={{
-                      borderColor: isSimulatingRecord ? `${currentEmotion.color}66` : '#2A3144',
-                      boxShadow: isSimulatingRecord
-                        ? `0 8px 32px rgba(0,0,0,0.5), 0 0 16px ${currentEmotion.color}33`
-                        : '0 8px 32px rgba(0,0,0,0.4)',
+                      borderColor: isSimulatingRecord ? `${currentEmotion.color}44` : 'rgba(255,255,255,0.08)',
                     }}
                   >
                     <div className="flex items-center gap-2.5">
@@ -210,7 +201,6 @@ export default function LandingPage() {
                             style={{
                               height: isSimulatingRecord ? `${Math.max(4, 16 * mult)}px` : '4px',
                               backgroundColor: isSimulatingRecord ? currentEmotion.color : '#3A4560',
-                              boxShadow: isSimulatingRecord ? `0 0 6px ${currentEmotion.color}88` : 'none',
                               animation: !isSimulatingRecord ? `wispr-idle-pulse 1.4s ease-in-out ${i * 0.08}s infinite` : undefined,
                             }}
                           />

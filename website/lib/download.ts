@@ -12,5 +12,5 @@ export function getDownloadUrl(): string {
   if (process.env.NEXT_PUBLIC_DMG_URL) {
     return process.env.NEXT_PUBLIC_DMG_URL;
   }
-  return '/api/download';
+  return `https://github.com/sainideep1234/my-wisper-emotion/releases/latest/download/${DMG_FILENAME}`;
 }
