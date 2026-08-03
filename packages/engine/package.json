@@ -1,0 +1,9 @@
+{
+  "name": "wisper-emotion-backend",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "naudiodon": "^2.3.6",
+    "onnxruntime-node": "^1.27.0"
+  }
+}

@@ -1,0 +1,45 @@
+@import 'tailwindcss';
+
+@layer base {
+  body {
+    background-color: #09090b;
+    color: #f4f4f5;
+    font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* Minimalist Clean Design Utility Classes (No Gradients / No AI Vibe) */
+.minimal-card {
+  background: #121215;
+  border: 1px solid #1f1f23;
+}
+
+.minimal-card:hover {
+  border-color: #2e2e35;
+}
+
+.minimal-pill {
+  background: #18181b;
+  border: 1px solid #27272a;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #09090b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}

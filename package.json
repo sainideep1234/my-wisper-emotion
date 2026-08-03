@@ -1,0 +1,53 @@
+{
+  "name": "wisper-emotion",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "main": "packages/desktop/dist/electron/main.js",
+  "scripts": {
+    "postinstall": "bash scripts/fix-naudiodon-portaudio.sh",
+    "build:whisper-addon": "bash scripts/build-whisper-addon.sh",
+    "build:paste-helper": "mkdir -p bin packages/desktop/bin && clang -O2 -framework ApplicationServices packages/desktop/electron/native/paste.c -o bin/paste-helper && cp bin/paste-helper packages/desktop/bin/paste-helper",
+    "build:fn-poll": "mkdir -p bin packages/desktop/bin && clang -O2 -framework ApplicationServices packages/desktop/electron/native/fn-poll.c -o bin/fn-poll && cp bin/fn-poll packages/desktop/bin/fn-poll",
+    "setup": "bun install && bun run build:whisper-addon && bun run build:paste-helper && bun run build:fn-poll && cd packages/desktop && bun install",
+    "dev": "cd packages/desktop && bun run dev",
+    "build:desktop": "cd packages/desktop && bun run build",
+    "build:app": "bun run build:desktop && bunx electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.wisper.emotion",
+    "productName": "Wisper",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "packages/desktop/dist/**/*",
+      "packages/desktop/bin/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "whisper.cpp/build/Release/addon.node",
+        "to": "whisper.cpp/build/Release/addon.node"
+      }
+    ],
+    "mac": {
+      "target": "dmg",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    }
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "electron-builder": "^24.13.3",
+    "electron": "^43.2.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@types/naudiodon": "^2.2.5",
+    "naudiodon": "^2.3.6"
+  }
+}
