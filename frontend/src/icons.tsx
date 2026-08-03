@@ -30,13 +30,15 @@ const icon =
     );
 
 // Heroicons outline set
-export const IconMic = icon(
-  <>
-    <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3Z" />
+export const IconMic: React.FC<IconProps> = ({ size = 16, color = 'currentColor', className, style }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
+    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
     <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-    <line x1="12" x2="12" y1="19" y2="22" />
-  </>,
+    <line x1="12" y1="19" x2="12" y2="22" />
+  </svg>
 );
+
+
 
 export const IconCpu = icon(
   <>
@@ -147,3 +149,11 @@ export const IconTrash = icon(
     <line x1="14" y1="11" x2="14" y2="17" />
   </>
 );
+
+export const IconLogo: React.FC<{ size?: number; className?: string; style?: React.CSSProperties }> = ({ size = 20, className, style }) => (
+  <svg width={size} height={size} viewBox="0 0 128 128" fill="none" className={className} style={style}>
+    <rect width="128" height="128" rx="28" fill="#09090b" stroke="#27272a" strokeWidth="2"/>
+    <path d="M 36 64 C 44 48, 52 80, 60 40 C 68 88, 76 32, 84 72 C 88 56, 92 64, 96 64" fill="none" stroke="#f4f4f5" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+

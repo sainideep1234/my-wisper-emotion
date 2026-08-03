@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { X, Check } from 'lucide-react';
+import { IconCheck, IconTrash } from './icons';
 
 const getEmotionColor = (label?: string): string => {
   switch (label) {
@@ -111,29 +111,31 @@ export const OverlayApp: React.FC = () => {
   };
 
   return (
-    <div className="overlay-pill-container">
-      <div
-        className="overlay-pill"
-        style={{
-          boxShadow: isRecording ? `0 0 16px ${activeColor}66` : undefined,
+    <div className="w-screen h-screen flex items-center justify-center bg-transparent overflow-hidden">
+        <div
+          className="bg-black/40 border border-neutral-800/80 rounded-full px-2 py-1.5 flex items-center gap-3 shadow-[0_10px_30px_rgba(0,0,0,0.6)] backdrop-blur-md"
+          style={{
+          boxShadow: isRecording ? `0 0 ${16 + audioLevel * 30}px ${activeColor}66` : undefined,
           borderColor: isRecording ? `${activeColor}aa` : undefined,
+          transform: isRecording ? `scale(${1 + audioLevel * 0.05})` : 'scale(1)',
+          transition: 'transform 0.1s ease-out, box-shadow 0.1s ease-out, border-color 0.2s',
         }}
       >
-        <button onClick={handleCancel} className="pill-btn pill-btn-cancel" title="Cancel Dictation">
-          <X size={14} strokeWidth={2.5} color="#FFFFFF" />
+        <button onClick={handleCancel} className="w-7 h-7 rounded-full border-none flex items-center justify-center cursor-pointer transition-all duration-150 hover:scale-105 bg-neutral-800/80" title="Cancel Dictation">
+          <IconTrash size={14} color="#FFFFFF" />
         </button>
 
-        <div className="pill-waveform-wrapper">
-          <canvas ref={canvasRef} width={80} height={20} className="pill-canvas" />
+        <div className="flex items-center justify-center px-1">
+          <canvas ref={canvasRef} className="h-5 w-20" />
         </div>
 
         <button
           onClick={handleConfirm}
-          className="pill-btn pill-btn-confirm"
+          className="w-7 h-7 rounded-full border-none flex items-center justify-center cursor-pointer transition-all duration-150 hover:scale-105"
           style={{ backgroundColor: activeColor }}
           title="Confirm & Paste"
         >
-          <Check size={14} strokeWidth={3} color="#FFFFFF" />
+          <IconCheck size={14} color="#FFFFFF" />
         </button>
       </div>
     </div>

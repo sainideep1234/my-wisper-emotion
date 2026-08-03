@@ -1,6 +1,8 @@
 import path from 'path';
 import fs from 'fs';
 import { createRequire } from 'module';
+import { trimSilencePcm } from '../audio-utils.ts';
+
 
 const require =
   typeof (globalThis as any).require === 'function'
@@ -82,7 +84,8 @@ export class Transcriber {
     if (!this.modelPath || !fs.existsSync(this.modelPath)) {
       return '';
     }
-    if (pcm.length < 16_000 * 0.2) return '';
+    const trimmedPcm = trimSilencePcm(pcm);
+    if (trimmedPcm.length < 16_000 * 0.2) return '';
 
     return new Promise((resolve) => {
       try {
@@ -91,13 +94,14 @@ export class Transcriber {
             language: this.language,
             model: this.modelPath,
             fname_inp: 'buffer',
-            pcmf32: pcm,
+            pcmf32: trimmedPcm,
             use_gpu: this.useGpu,
             flash_attn: false,
             no_prints: true,
             no_timestamps: true,
             detect_language: false,
           },
+
           (err, result) => {
             if (err || !result) {
               if (err) console.error('Whisper error:', err);

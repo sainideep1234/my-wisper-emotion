@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   IconMic,
+  IconActivity,
   IconCpu,
   IconHeart,
   IconGear,
@@ -10,7 +11,6 @@ import {
   IconDownload,
   IconSpinner,
   IconShield,
-  IconActivity,
   IconBolt,
   IconFire,
   IconFace,
@@ -20,6 +20,7 @@ import {
   IconStar,
   IconClipboard,
   IconTrash,
+  IconLogo,
 } from './icons';
 
 interface ModelInfo {
@@ -476,9 +477,9 @@ export const App: React.FC = () => {
         width: '100vw', height: '100vh', background: 'transparent',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontFamily: 'system-ui, -apple-system, sans-serif',
-        WebkitAppRegion: 'drag' as any, userSelect: 'none', overflow: 'hidden',
+        WebkitAppRegion: 'drag', userSelect: 'none', overflow: 'hidden',
         boxSizing: 'border-box', padding: '0 8px',
-      }}>
+      } as any}>
         <style>{`
           @keyframes wispr-idle-pulse {
             0%, 100% { transform: scaleY(0.35); opacity: 0.45; }
@@ -488,94 +489,119 @@ export const App: React.FC = () => {
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
           }
+          @keyframes aura-wave {
+            0% { box-shadow: 0 0 0 0px var(--wave-color); opacity: 0.9; }
+            100% { box-shadow: 0 0 0 8px var(--wave-color); opacity: 0; }
+          }
         `}</style>
 
-        <div style={{
-          width: '100%', maxWidth: 340, height: 56,
-          borderRadius: 999, display: 'flex', alignItems: 'center',
-          justifyContent: 'space-between', padding: '0 16px',
-          background: 'rgba(10, 12, 16, 0.88)',
-          border: `1px solid ${isRecording ? `${currentEmotionColor}55` : '#2A3144'}`,
-          boxShadow: isRecording
-            ? `0 8px 32px rgba(0,0,0,0.45), 0 0 0 1px ${currentEmotionColor}22`
-            : '0 8px 32px rgba(0,0,0,0.4)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          WebkitAppRegion: 'drag' as any,
-        }}>
-          {/* Mic + wave bars */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, WebkitAppRegion: 'no-drag' as any }}>
+        {/* Glowing Aura Container */}
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', minWidth: 220, maxWidth: 260, height: 46, '--wave-color': currentEmotionColor } as any}>
+          {isRecording && (
             <div style={{
-              width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-              background: isRecording ? `${currentEmotionColor}22` : '#1A2132',
-              border: `1px solid ${isRecording ? currentEmotionColor : '#2D374E'}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              {isProcessing ? (
+              position: 'absolute',
+              inset: 0,
+              borderRadius: 999,
+              border: `1px solid ${currentEmotionColor}`,
+              animation: 'aura-wave 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite',
+              zIndex: 0,
+              pointerEvents: 'none',
+            }} />
+          )}
+
+          {/* Main Pill */}
+          <div style={{
+            width: '100%', height: '100%',
+            borderRadius: 999, display: 'flex', alignItems: 'center',
+            justifyContent: 'space-between', padding: '0 12px',
+            background: 'rgba(10, 12, 16, 0.88)',
+            border: `1px solid ${isRecording ? `${currentEmotionColor}55` : '#2A3144'}`,
+            boxShadow: isRecording
+              ? `0 8px 32px rgba(0,0,0,0.45), 0 0 12px ${currentEmotionColor}33`
+              : '0 8px 32px rgba(0,0,0,0.4)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            WebkitAppRegion: 'drag',
+            zIndex: 1,
+            transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
+          } as any}>
+            {/* Mic + wave bars */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, WebkitAppRegion: 'no-drag' } as any}>
+              <div style={{
+                width: 24, height: 24, borderRadius: 8, flexShrink: 0,
+                background: isRecording ? `${currentEmotionColor}22` : '#1A2132',
+                border: `1px solid ${isRecording ? currentEmotionColor : '#2D374E'}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'all 0.3s ease',
+              }}>
+                {isProcessing ? (
+                  <div style={{
+                    width: 12, height: 12, borderRadius: '50%',
+                    border: `2px solid ${currentEmotionColor}44`,
+                    borderTopColor: currentEmotionColor,
+                    animation: 'wispr-spin 0.8s linear infinite',
+                  }} />
+                ) : (
+                  <IconMic size={12} color={isRecording ? currentEmotionColor : '#94A3B8'} />
+                )}
+              </div>
+
+              {/* Animated waveform */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 2, height: 24 }}>
+                {waveMultipliers.map((mult, i) => {
+                  const active = isRecording || isProcessing;
+                  const h = active
+                    ? Math.max(4, Math.min(20, smoothLevel * 20 * mult + (isProcessing ? 4 : 0)))
+                    : 4;
+                  return (
+                    <div
+                      key={i}
+                      style={{
+                        width: 2.5,
+                        height: `${h}px`,
+                        borderRadius: 2,
+                        background: active ? barColor : '#3A4560',
+                        boxShadow: active ? `0 0 4px ${barColor}88` : 'none',
+                        transformOrigin: 'center bottom',
+                        transition: active ? 'height 0.06s ease-out, background 0.2s' : 'none',
+                        animation: !active ? `wispr-idle-pulse 1.4s ease-in-out ${i * 0.08}s infinite` : 'none',
+                      }}
+                    />
+                  );
+                })}
+              </div>
+
+              <span style={{
+                fontSize: 11, fontWeight: 600, color: isRecording ? '#F1F5F9' : '#94A3B8',
+                whiteSpace: 'nowrap', marginLeft: 2,
+              }}>
+                {statusLabel}
+              </span>
+            </div>
+
+            {/* Right: emotion tag or shortcut hint */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, WebkitAppRegion: 'no-drag', flexShrink: 0 } as any}>
+              {isRecording && liveEmotion ? (
                 <div style={{
-                  width: 14, height: 14, borderRadius: '50%',
-                  border: `2px solid ${currentEmotionColor}44`,
-                  borderTopColor: currentEmotionColor,
-                  animation: 'wispr-spin 0.8s linear infinite',
-                }} />
+                  padding: '2px 8px', borderRadius: 6,
+                  background: '#131824', border: `1px solid ${currentEmotionColor}44`,
+                  color: currentEmotionColor, fontSize: 9, fontWeight: 600,
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  boxShadow: `0 0 6px ${currentEmotionColor}22`,
+                }}>
+                  <IconActivity size={10} color={currentEmotionColor} />
+                  <span>{currentEmotionLabel}</span>
+                </div>
               ) : (
-                <IconMic size={14} color={isRecording ? currentEmotionColor : '#94A3B8'} />
+                <span style={{
+                  fontSize: 10, color: accessibilityGranted ? '#64748B' : '#F59E0B',
+                  fontFamily: 'monospace',
+                }} title={accessibilityGranted ? 'Hold Fn to dictate' : 'Use Cmd+Option+Space'}
+                >
+                  {accessibilityGranted ? (isLongSession ? 'fn tap' : 'fn') : '⌘⌥␣'}
+                </span>
               )}
             </div>
-
-            {/* Animated waveform */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 2.5, height: 28 }}>
-              {waveMultipliers.map((mult, i) => {
-                const active = isRecording || isProcessing;
-                const h = active
-                  ? Math.max(4, Math.min(26, smoothLevel * 28 * mult + (isProcessing ? 6 : 0)))
-                  : 6;
-                return (
-                  <div
-                    key={i}
-                    style={{
-                      width: 3,
-                      height: `${h}px`,
-                      borderRadius: 2,
-                      background: active ? barColor : '#3A4560',
-                      transformOrigin: 'center bottom',
-                      transition: active ? 'height 0.06s ease-out, background 0.2s' : 'none',
-                      animation: !active ? `wispr-idle-pulse 1.4s ease-in-out ${i * 0.08}s infinite` : 'none',
-                    }}
-                  />
-                );
-              })}
-            </div>
-
-            <span style={{
-              fontSize: 12, fontWeight: 600, color: isRecording ? '#F1F5F9' : '#94A3B8',
-              whiteSpace: 'nowrap', marginLeft: 2,
-            }}>
-              {statusLabel}
-            </span>
-          </div>
-
-          {/* Right: emotion tag or shortcut hint */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, WebkitAppRegion: 'no-drag' as any, flexShrink: 0 }}>
-            {isRecording && liveEmotion ? (
-              <div style={{
-                padding: '3px 9px', borderRadius: 6,
-                background: '#131824', border: `1px solid ${currentEmotionColor}44`,
-                color: currentEmotionColor, fontSize: 10, fontWeight: 600,
-                display: 'flex', alignItems: 'center', gap: 4,
-              }}>
-                <EmotionIcon label={liveEmotion.label} size={10} color={currentEmotionColor} />
-                <span>{currentEmotionLabel}</span>
-              </div>
-            ) : (
-              <span style={{
-                fontSize: 10, color: accessibilityGranted ? '#64748B' : '#F59E0B',
-                fontFamily: 'monospace',
-              }} title={accessibilityGranted ? 'Hold Fn to dictate' : 'Use Cmd+Option+Space'}
-              >
-                {accessibilityGranted ? (isLongSession ? 'fn tap' : 'fn') : '⌘⌥␣'}
-              </span>
-            )}
           </div>
         </div>
       </div>
@@ -587,10 +613,7 @@ export const App: React.FC = () => {
   // ───────────────────────────────────────────────────────────────────────────
   if (firstLaunchGate === 'checking') {
     return (
-      <div style={{
-        height: '100vh', width: '100vw', background: '#090B0E',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }} />
+      <div className="flex items-center justify-center h-screen w-screen bg-black" />
     );
   }
 
@@ -605,25 +628,20 @@ export const App: React.FC = () => {
         height: '100vh', width: '100vw', background: '#090B0E',
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         justifyContent: 'center', fontFamily: 'system-ui, -apple-system, sans-serif',
-        WebkitAppRegion: 'drag' as any,
-      }}>
+        WebkitAppRegion: 'drag',
+      } as any}>
         <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            width: 40, height: 40, borderRadius: 10,
-            background: '#131620', border: '1px solid #22283A',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <IconWaves size={20} color="#10B981" />
-          </div>
+          <IconLogo size={36} />
           <span style={{ fontSize: 18, fontWeight: 700, color: '#F1F5F9', letterSpacing: '-0.3px' }}>
-            Wispr Flow Desktop
+            Wisper Emotion
           </span>
         </div>
 
         <div style={{
           width: 420, background: '#121520', border: '1px solid #22283A',
-          borderRadius: 14, padding: '32px', WebkitAppRegion: 'no-drag' as any,
-        }}>
+          borderRadius: 14, padding: '32px', WebkitAppRegion: 'no-drag',
+        } as any}>
+
           <div style={{ marginBottom: 24, textAlign: 'center' }}>
             <div style={{
               width: 52, height: 52, borderRadius: 14,
@@ -639,7 +657,7 @@ export const App: React.FC = () => {
                   : <IconDownload size={24} color="#0EA5E9" style={isDownloading || isWaiting ? { animation: 'pulse 1.5s ease-in-out infinite' } : {}} />
               }
             </div>
-            <h2 style={{ fontSize: 17, fontWeight: 700, color: '#F1F5F9', marginBottom: 6 }}>
+            <h2 className="text-[17px] font-bold text-neutral-100 mb-1.5">
               {isDone ? 'Engine Ready' : isError ? 'Download Interrupted' : 'Initializing Speech Engine'}
             </h2>
             <p style={{ fontSize: 13, color: '#94A3B8', lineHeight: 1.55 }}>
@@ -906,58 +924,56 @@ export const App: React.FC = () => {
       `}</style>
 
       {/* Sidebar Navigation */}
-      <aside className="sidebar">
-        <div>
-          <div className="sidebar-header">
-            <div className="brand-icon-box" style={{ borderColor: isRecording ? currentEmotionColor : undefined }}>
-              <IconWaves size={16} color={isRecording ? currentEmotionColor : '#10B981'} />
-            </div>
+      <aside className="w-[228px] shrink-0 bg-[#0A0A0A] border-r border-neutral-900 flex flex-col p-[36px_12px_18px] gap-2.5 z-10">
+        <div className="flex flex-col flex-1">
+          <div className="flex items-center gap-2.5 px-2 pb-4 mb-1.5 border-b border-neutral-900/50">
+            <IconLogo size={26} />
             <div>
-              <div className="brand-title">Wispr Flow</div>
-              <div className="brand-subtitle">Voice &amp; Emotion Engine</div>
+              <div className="text-sm font-bold tracking-tight text-neutral-200 leading-tight">Wisper Emotion</div>
+              <div className="text-[10px] text-neutral-500 font-normal mt-[1px]">Voice &amp; Emotion Engine</div>
             </div>
           </div>
 
-          <nav className="sidebar-nav">
-            <button className={`nav-item ${activeTab === 'dictate' ? 'active' : ''}`} onClick={() => setActiveTab('dictate')}>
-              <div className="nav-left">
+          <nav className="flex flex-col gap-0.5 flex-1">
+            <button className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer transition-all duration-150 w-full text-left border ${activeTab === 'dictate' ? 'bg-neutral-900/50 text-neutral-200 border-neutral-800/50' : 'bg-transparent text-neutral-400 border-transparent hover:bg-white/5 hover:text-neutral-200'}`} onClick={() => setActiveTab('dictate')}>
+              <div className="flex items-center gap-2.5">
                 <IconMic size={15} color={isRecording ? currentEmotionColor : undefined} />
                 <span>Dictation</span>
               </div>
               {isRecording && (
-                <span className="nav-tag" style={{ color: currentEmotionColor, backgroundColor: `${currentEmotionColor}22` }}>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-900/50 text-neutral-500 flex items-center gap-1" style={{ color: currentEmotionColor, backgroundColor: `${currentEmotionColor}22` }}>
                   {liveEmotion?.label || 'Live'}
                 </span>
               )}
             </button>
 
-            <button className={`nav-item ${activeTab === 'models' ? 'active' : ''}`} onClick={() => setActiveTab('models')}>
-              <div className="nav-left">
+            <button className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer transition-all duration-150 w-full text-left border ${activeTab === 'models' ? 'bg-neutral-900/50 text-neutral-200 border-neutral-800/50' : 'bg-transparent text-neutral-400 border-transparent hover:bg-white/5 hover:text-neutral-200'}`} onClick={() => setActiveTab('models')}>
+              <div className="flex items-center gap-2.5">
                 <IconCpu size={15} />
                 <span>Models</span>
               </div>
-              <span className="nav-tag">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-900/50 text-neutral-500 flex items-center gap-1">
                 {models.filter((m) => m.downloaded).length}/{models.length}
               </span>
             </button>
 
-            <button className={`nav-item ${activeTab === 'emotions' ? 'active' : ''}`} onClick={() => setActiveTab('emotions')}>
-              <div className="nav-left">
+            <button className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer transition-all duration-150 w-full text-left border ${activeTab === 'emotions' ? 'bg-neutral-900/50 text-neutral-200 border-neutral-800/50' : 'bg-transparent text-neutral-400 border-transparent hover:bg-white/5 hover:text-neutral-200'}`} onClick={() => setActiveTab('emotions')}>
+              <div className="flex items-center gap-2.5">
                 <IconHeart size={15} color={isRecording ? currentEmotionColor : undefined} />
                 <span>Emotions</span>
               </div>
             </button>
 
-            <button className={`nav-item ${activeTab === 'clipboard' ? 'active' : ''}`} onClick={() => setActiveTab('clipboard')}>
-              <div className="nav-left">
+            <button className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer transition-all duration-150 w-full text-left border ${activeTab === 'clipboard' ? 'bg-neutral-900/50 text-neutral-200 border-neutral-800/50' : 'bg-transparent text-neutral-400 border-transparent hover:bg-white/5 hover:text-neutral-200'}`} onClick={() => setActiveTab('clipboard')}>
+              <div className="flex items-center gap-2.5">
                 <IconClipboard size={15} />
                 <span>Clipboard</span>
               </div>
-              {clipboardHistory.length > 0 && <span className="nav-tag">{clipboardHistory.length}</span>}
+              {clipboardHistory.length > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-900/50 text-neutral-500 flex items-center gap-1">{clipboardHistory.length}</span>}
             </button>
 
-            <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
-              <div className="nav-left">
+            <button className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer transition-all duration-150 w-full text-left border ${activeTab === 'settings' ? 'bg-neutral-900/50 text-neutral-200 border-neutral-800/50' : 'bg-transparent text-neutral-400 border-transparent hover:bg-white/5 hover:text-neutral-200'}`} onClick={() => setActiveTab('settings')}>
+              <div className="flex items-center gap-2.5">
                 <IconGear size={15} />
                 <span>Settings</span>
               </div>
@@ -965,21 +981,21 @@ export const App: React.FC = () => {
           </nav>
         </div>
 
-        <div className="sidebar-footer">
-          <div className="footer-title">Shortcuts</div>
-          <div className="keybind-row">
+        <div className="p-3.5 bg-[#0A0A0A] border border-neutral-900/50 rounded-xl flex flex-col gap-2.5">
+          <div className="text-[10px] font-bold text-neutral-600 uppercase tracking-wider">Shortcuts</div>
+          <div className="flex items-center justify-between text-[11px] text-neutral-500">
             <span>Hold to Speak</span>
             <span className="kbd">fn</span>
           </div>
-          <div className="keybind-row">
+          <div className="flex items-center justify-between text-[11px] text-neutral-500">
             <span>Hands-free</span>
             <span className="kbd">fn + Space</span>
           </div>
-          <div className="keybind-row">
+          <div className="flex items-center justify-between text-[11px] text-neutral-500">
             <span>Paste last</span>
             <span className="kbd">⌘V</span>
           </div>
-          <div className="keybind-row">
+          <div className="flex items-center justify-between text-[11px] text-neutral-500">
             <span>Toggle Backup</span>
             <span className="kbd">⌘ ⌥ Space</span>
           </div>
@@ -987,7 +1003,7 @@ export const App: React.FC = () => {
       </aside>
 
       {/* Main Console View */}
-      <main className="main-content">
+      <main className="flex-1 flex flex-col overflow-y-auto p-[26px_32px]">
         {updateInfo && (
           <div style={{
             marginBottom: 16, padding: '14px 18px', borderRadius: 10,
@@ -1009,7 +1025,7 @@ export const App: React.FC = () => {
               >
                 Download
               </button>
-              <button className="select-btn" onClick={() => setUpdateInfo(null)}>
+              <button className="px-3 py-1.5 rounded-md bg-[#0A0A0A] border border-neutral-800 text-neutral-200 text-[11px] font-medium cursor-pointer transition-all duration-150 inline-flex items-center gap-1.5 whitespace-nowrap hover:bg-white/5" onClick={() => setUpdateInfo(null)}>
                 Dismiss
               </button>
             </div>
@@ -1017,8 +1033,8 @@ export const App: React.FC = () => {
         )}
 
         {!microphoneGranted && (
-          <div className="card" style={{ marginBottom: 16, borderColor: '#7C3AED44', backgroundColor: '#1A1428' }}>
-            <div className="card-title-row">
+          <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-3.5" style={{ marginBottom: 16, borderColor: '#7C3AED44', backgroundColor: '#1A1428' }}>
+            <div className="flex items-center justify-between gap-2">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <IconMic size={16} color="#A78BFA" />
                 <span className="card-title" style={{ color: '#A78BFA' }}>
@@ -1039,8 +1055,8 @@ export const App: React.FC = () => {
         )}
 
         {!accessibilityGranted && (
-          <div className="card" style={{ marginBottom: 16, borderColor: '#3A4560', backgroundColor: '#141A28' }}>
-            <div className="card-title-row">
+          <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-3.5" style={{ marginBottom: 16, borderColor: '#3A4560', backgroundColor: '#141A28' }}>
+            <div className="flex items-center justify-between gap-2">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <IconShield size={16} color="#0EA5E9" />
                 <span className="card-title" style={{ color: '#0EA5E9' }}>
@@ -1088,30 +1104,30 @@ export const App: React.FC = () => {
         {/* ── DICTATION TAB ── */}
         {activeTab === 'dictate' && (
           <div>
-            <div className="page-header">
+            <div className="flex items-start justify-between mb-6">
               <div>
-                <h1 className="page-title">Voice Dictation</h1>
-                <p className="page-subtitle">Real-time emotion-aware speech-to-text system</p>
+                <h1 className="text-xl font-bold text-neutral-200 tracking-tight leading-tight">Voice Dictation</h1>
+                <p className="text-xs text-neutral-500 mt-1 leading-relaxed">Real-time emotion-aware speech-to-text system</p>
               </div>
-              <span className="badge" style={{ borderColor: isRecording ? `${currentEmotionColor}66` : undefined, color: isRecording ? currentEmotionColor : '#94A3B8' }}>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap" style={{ borderColor: isRecording ? `${currentEmotionColor}66` : undefined, color: isRecording ? currentEmotionColor : '#94A3B8' }}>
                 <div className={`dot-indicator ${isRecording ? 'active' : ''}`} style={{ backgroundColor: isRecording ? currentEmotionColor : undefined }} />
                 {isRecording ? `Recording (${currentEmotionLabel})` : 'Engine Ready'}
               </span>
             </div>
 
-            <div className="card-grid">
-              <div className="card" style={{ borderColor: isRecording ? `${currentEmotionColor}66` : undefined }}>
-                <div className="card-title-row">
-                  <span className="card-title">Live Trigger</span>
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4 mb-6">
+              <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-3.5" style={{ borderColor: isRecording ? `${currentEmotionColor}66` : undefined }}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Live Trigger</span>
                   {isRecording && liveEmotion && (
-                    <span className="badge" style={{ color: currentEmotionColor, borderColor: `${currentEmotionColor}44` }}>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap" style={{ color: currentEmotionColor, borderColor: `${currentEmotionColor}44` }}>
                       <EmotionIcon label={liveEmotion.label} size={12} />
                       {liveEmotion.label} ({Math.round(liveEmotion.confidence * 100)}%)
                     </span>
                   )}
                 </div>
                 <button
-                  className={`recording-btn ${isRecording ? 'active' : ''}`}
+                  className={`flex items-center justify-center gap-2.5 p-[14px_20px] rounded-xl text-[13px] font-semibold cursor-pointer transition-all duration-150 w-full border ${isRecording ? 'bg-emerald-500/10 border-emerald-500 text-emerald-100 shadow-[0_0_20px_rgba(16,185,129,0.25)]' : 'bg-[#0A0A0A] border-neutral-800 text-neutral-200 hover:bg-white/5 hover:border-neutral-700'}`}
                   onMouseDown={(e) => { e.preventDefault(); handleRecordStart(); }}
                   onMouseUp={handleRecordStop}
                   onTouchStart={(e) => { e.preventDefault(); handleRecordStart(); }}
@@ -1134,19 +1150,19 @@ export const App: React.FC = () => {
                 )}
               </div>
 
-              <div className="card">
-                <div className="card-title-row">
-                  <span className="card-title">Latest Transcript</span>
+              <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-3.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Latest Transcript</span>
                 </div>
                 <p style={{ fontSize: 14, color: lastTranscript ? '#F1F5F9' : '#64748B', margin: 0, lineHeight: 1.5, minHeight: 40 }}>
                   {partialText || lastTranscript || (isRecording ? 'Listening…' : 'Hold the button above and speak. Transcript appears here and streams to your cursor.')}
                 </p>
               </div>
 
-              <div className="card">
-                <div className="card-title-row">
-                  <span className="card-title">Active Speech Model</span>
-                  {activeModel && <span className="badge">{activeModel.weightSize}</span>}
+              <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-3.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Active Speech Model</span>
+                  {activeModel && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap">{activeModel.weightSize}</span>}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <span style={{ fontSize: 14, fontWeight: 600, color: '#F8FAFC' }}>
@@ -1164,31 +1180,31 @@ export const App: React.FC = () => {
             </h2>
 
             {history.length === 0 ? (
-              <div className="card" style={{ padding: 32, textAlign: 'center', color: '#94A3B8' }}>
+              <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-3.5" style={{ padding: 32, textAlign: 'center', color: '#94A3B8' }}>
                 <p style={{ margin: 0 }}>No dictation history yet. Hold <span className="kbd">fn</span> anywhere to begin speaking.</p>
               </div>
             ) : (
-              <div className="history-list">
+              <div className="flex flex-col gap-3">
                 {history.map((item) => {
                   const emoColor = getEmotionColor(item.emotion?.label);
                   return (
-                    <div key={item.id} className="history-card" style={{ borderLeft: `3px solid ${emoColor}` }}>
-                      <div className="history-meta">
+                    <div key={item.id} className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-[16px_18px] flex flex-col gap-2.5 shadow-sm" style={{ borderLeft: `3px solid ${emoColor}` }}>
+                      <div className="flex items-center justify-between text-[11px] text-neutral-500 gap-2">
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span>{item.timestamp}</span>
                           {item.emotion?.label && (
-                            <span className="badge" style={{ color: emoColor, borderColor: `${emoColor}40` }}>
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap" style={{ color: emoColor, borderColor: `${emoColor}40` }}>
                               <EmotionIcon label={item.emotion.label} size={11} />
                               {item.emotion.label} ({Math.round((item.emotion.confidence || 0.9) * 100)}%)
                             </span>
                           )}
                         </div>
-                        <button onClick={() => handleCopyText(item.id, item.text)} className="select-btn" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <button onClick={() => handleCopyText(item.id, item.text)} className="px-3 py-1.5 rounded-md bg-[#0A0A0A] border border-neutral-800 text-neutral-200 text-[11px] font-medium cursor-pointer transition-all duration-150 inline-flex items-center gap-1.5 whitespace-nowrap hover:bg-white/5" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                           {copiedId === item.id ? <IconCheck size={12} /> : <IconCopy size={12} />}
                           <span>{copiedId === item.id ? 'Copied' : 'Copy'}</span>
                         </button>
                       </div>
-                      <p className="history-text">{item.text}</p>
+                      <p className="text-[13px] leading-relaxed text-neutral-200">{item.text}</p>
                     </div>
                   );
                 })}
@@ -1200,19 +1216,19 @@ export const App: React.FC = () => {
         {/* ── MODELS TAB ── */}
         {activeTab === 'models' && (
           <div>
-            <div className="page-header">
+            <div className="flex items-start justify-between mb-6">
               <div>
-                <h1 className="page-title">Model Management</h1>
-                <p className="page-subtitle">
+                <h1 className="text-xl font-bold text-neutral-200 tracking-tight leading-tight">Model Management</h1>
+                <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
                   Select and manage Whisper speech model weights locally on your system.
                 </p>
               </div>
-              <span className="badge">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap">
                 {models.filter((m) => m.downloaded).length} of {models.length} Downloaded
               </span>
             </div>
 
-            <table className="model-table">
+            <table className="w-full border-collapse border border-neutral-900 rounded-xl overflow-hidden bg-[#0A0A0A]">
               <thead>
                 <tr>
                   <th>Model Identifier</th>
@@ -1233,29 +1249,29 @@ export const App: React.FC = () => {
                         <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>{m.description}</div>
                       </td>
                       <td>
-                        <span className="badge" style={{ fontWeight: 600, color: '#F1F5F9', background: '#181E2B' }}>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap" style={{ fontWeight: 600, color: '#F1F5F9', background: '#181E2B' }}>
                           {m.weightSize}
                         </span>
                       </td>
                       <td>{m.ramRequired}</td>
                       <td>
                         {isDownloading ? (
-                          <span className="badge" style={{ color: '#0EA5E9' }}>
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap" style={{ color: '#0EA5E9' }}>
                             <IconSpinner size={10} style={{ animation: 'spin 1s linear infinite' }} />
                             {dl.percent}%
                           </span>
                         ) : m.downloaded ? (
-                          <span className="badge" style={{ color: '#10B981', borderColor: '#10B98144' }}>
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap" style={{ color: '#10B981', borderColor: '#10B98144' }}>
                             Downloaded
                           </span>
                         ) : (
-                          <span className="badge" style={{ color: '#64748B' }}>Not Installed</span>
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap" style={{ color: '#64748B' }}>Not Installed</span>
                         )}
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: 6 }}>
                           {!m.downloaded && !isDownloading && (
-                            <button onClick={() => handleDownload(m)} className="select-btn" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <button onClick={() => handleDownload(m)} className="px-3 py-1.5 rounded-md bg-[#0A0A0A] border border-neutral-800 text-neutral-200 text-[11px] font-medium cursor-pointer transition-all duration-150 inline-flex items-center gap-1.5 whitespace-nowrap hover:bg-white/5" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                               <IconDownload size={12} />
                               <span>Download</span>
                             </button>
@@ -1278,25 +1294,25 @@ export const App: React.FC = () => {
         {/* ── EMOTIONS TAB ── */}
         {activeTab === 'emotions' && (
           <div>
-            <div className="page-header">
+            <div className="flex items-start justify-between mb-6">
               <div>
-                <h1 className="page-title">Tone &amp; Emotion Analysis</h1>
-                <p className="page-subtitle">Acoustic tone classification and history</p>
+                <h1 className="text-xl font-bold text-neutral-200 tracking-tight leading-tight">Tone &amp; Emotion Analysis</h1>
+                <p className="text-xs text-neutral-500 mt-1 leading-relaxed">Acoustic tone classification and history</p>
               </div>
             </div>
 
-            <div className="card-grid">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4 mb-6">
               {ALL_EMOTIONS.map((emo) => {
                 const count = emotionCounts[emo] || 0;
                 const color = getEmotionColor(emo);
                 return (
-                  <div key={emo} className="card" style={{ borderLeft: `3px solid ${color}` }}>
-                    <div className="card-title-row">
+                  <div key={emo} className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-3.5" style={{ borderLeft: `3px solid ${color}` }}>
+                    <div className="flex items-center justify-between gap-2">
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <EmotionIcon label={emo} size={16} color={color} />
-                        <span className="card-title">{emo}</span>
+                        <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">{emo}</span>
                       </div>
-                      <span className="badge" style={{ color }}>{count} logs</span>
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap" style={{ color }}>{count} logs</span>
                     </div>
                   </div>
                 );
@@ -1308,13 +1324,13 @@ export const App: React.FC = () => {
         {/* ── CLIPBOARD TAB ── */}
         {activeTab === 'clipboard' && (
           <div>
-            <div className="page-header">
+            <div className="flex items-start justify-between mb-6">
               <div>
-                <h1 className="page-title">Clipboard History</h1>
-                <p className="page-subtitle">Every dictation is saved here and left on the clipboard for ⌘V</p>
+                <h1 className="text-xl font-bold text-neutral-200 tracking-tight leading-tight">Clipboard History</h1>
+                <p className="text-xs text-neutral-500 mt-1 leading-relaxed">Every dictation is saved here and left on the clipboard for ⌘V</p>
               </div>
               {clipboardHistory.length > 0 && (
-                <button className="select-btn" onClick={handleClearClipboard} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <button className="px-3 py-1.5 rounded-md bg-[#0A0A0A] border border-neutral-800 text-neutral-200 text-[11px] font-medium cursor-pointer transition-all duration-150 inline-flex items-center gap-1.5 whitespace-nowrap hover:bg-white/5" onClick={handleClearClipboard} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <IconTrash size={12} />
                   <span>Clear History</span>
                 </button>
@@ -1335,15 +1351,15 @@ export const App: React.FC = () => {
               />
             </div>
 
-            <div className="history-list">
+            <div className="flex flex-col gap-3">
               {clipboardHistory
                 .filter((item) => item.text.toLowerCase().includes(clipboardSearch.toLowerCase()))
                 .map((item) => (
-                  <div key={item.id} className="history-card">
-                    <div className="history-meta">
+                  <div key={item.id} className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-[16px_18px] flex flex-col gap-2.5 shadow-sm">
+                    <div className="flex items-center justify-between text-[11px] text-neutral-500 gap-2">
                       <span>{item.timestamp}</span>
                       <div style={{ display: 'flex', gap: 6 }}>
-                        <button onClick={() => handleCopyText(item.id, item.text)} className="select-btn">
+                        <button onClick={() => handleCopyText(item.id, item.text)} className="px-3 py-1.5 rounded-md bg-[#0A0A0A] border border-neutral-800 text-neutral-200 text-[11px] font-medium cursor-pointer transition-all duration-150 inline-flex items-center gap-1.5 whitespace-nowrap hover:bg-white/5">
                           Copy
                         </button>
                         <button onClick={() => handlePasteClipboard(item.text)} className="select-btn active">
@@ -1351,7 +1367,7 @@ export const App: React.FC = () => {
                         </button>
                       </div>
                     </div>
-                    <p className="history-text">{item.text}</p>
+                    <p className="text-[13px] leading-relaxed text-neutral-200">{item.text}</p>
                   </div>
                 ))}
             </div>
@@ -1361,14 +1377,14 @@ export const App: React.FC = () => {
         {/* ── SETTINGS TAB ── */}
         {activeTab === 'settings' && (
           <div>
-            <div className="page-header">
+            <div className="flex items-start justify-between mb-6">
               <div>
-                <h1 className="page-title">Settings</h1>
-                <p className="page-subtitle">Configure system triggers and options</p>
+                <h1 className="text-xl font-bold text-neutral-200 tracking-tight leading-tight">Settings</h1>
+                <p className="text-xs text-neutral-500 mt-1 leading-relaxed">Configure system triggers and options</p>
               </div>
             </div>
 
-            <div className="card">
+            <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-3.5">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600 }}>Shift + C Quick Paste</div>

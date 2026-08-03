@@ -387,4 +387,18 @@ export class AudioPipeline extends EventEmitter {
       scores,
     };
   }
+
+  public shutdown(): void {
+    if (this.isRecording) {
+      this.stopRecording().catch(() => {});
+    }
+    if (this.vadSession) {
+      try { this.vadSession.release(); } catch (e) {}
+      this.vadSession = null;
+    }
+    if (this.emotionSession) {
+      try { this.emotionSession.release(); } catch (e) {}
+      this.emotionSession = null;
+    }
+  }
 }

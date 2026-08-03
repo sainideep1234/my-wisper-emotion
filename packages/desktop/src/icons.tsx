@@ -15,6 +15,7 @@ export const IconMic: React.FC<IconProps> = ({ size = 16, color = 'currentColor'
   </svg>
 );
 
+
 export const IconCpu: React.FC<IconProps> = ({ size = 16, color = 'currentColor', className, style }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
     <rect x="4" y="4" width="16" height="16" rx="2" ry="2" />
@@ -157,3 +158,11 @@ export const IconTrash: React.FC<IconProps> = ({ size = 16, color = 'currentColo
     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
   </svg>
 );
+
+export const IconLogo: React.FC<IconProps> = ({ size = 20, className, style }) => (
+  <svg width={size} height={size} viewBox="0 0 128 128" fill="none" className={className} style={style}>
+    <rect width="128" height="128" rx="28" fill="#09090b" stroke="#27272a" strokeWidth="2"/>
+    <path d="M 36 64 C 44 48, 52 80, 60 40 C 68 88, 76 32, 84 72 C 88 56, 92 64, 96 64" fill="none" stroke="#f4f4f5" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+

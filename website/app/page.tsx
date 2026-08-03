@@ -21,6 +21,16 @@ export default function LandingPage() {
     'dictation',
   );
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(0);
+  const [isSimulatingRecord, setIsSimulatingRecord] = useState(true);
+  const [simulatedEmotionIndex, setSimulatedEmotionIndex] = useState(0);
+
+  const emotionModes = [
+    { label: 'Calm', color: '#10B981', hint: 'Transcribing speech…' },
+    { label: 'Energetic', color: '#38BDF8', hint: 'High pace detected…' },
+    { label: 'Focused', color: '#0EA5E9', hint: 'Technical dictation…' },
+    { label: 'Happy', color: '#34D399', hint: 'Expressive tone…' },
+    { label: 'Thoughtful', color: '#94A3B8', hint: 'Steady pace…' },
+  ];
 
   const modelsList = [
     {
@@ -108,7 +118,7 @@ export default function LandingPage() {
           {/* Brand Mark */}
           <div className="flex items-center gap-2.5">
             <div className="w-6 h-6 rounded-md bg-[#18181b] border border-[#27272a] flex items-center justify-center">
-              <Image src="/logo.svg" alt="Wisper Logo" width={16} height={16} className="w-4 h-4" />
+              <Image src="/logo.svg" alt="Wisper Logo" width={16} height={16} className="w-4 h-4" style={{ width: 'auto', height: 'auto' }} />
             </div>
             <span className="font-semibold text-sm tracking-tight text-white">
               Wisper Emotion
@@ -151,12 +161,94 @@ export default function LandingPage() {
       {/* ── HERO SECTION ── */}
       <section className="pt-14 pb-12 md:pt-20 md:pb-16 border-b border-[#1c1c21]">
         <div className="max-w-3xl mx-auto px-4 text-center flex flex-col items-center">
-          {/* App Emblem */}
-          <div className="mb-5">
-            <div className="w-14 h-14 rounded-2xl bg-[#121215] border border-[#27272a] flex items-center justify-center p-2.5 shadow-sm">
-              <Image src="/logo.svg" alt="Wisper Logo" width={36} height={36} className="w-9 h-9" />
-            </div>
-          </div>
+          {/* Interactive Desktop Floating Overlay Pill Preview */}
+          {(() => {
+            const currentEmotion = emotionModes[simulatedEmotionIndex] ?? emotionModes[0]!;
+            return (
+              <div className="mb-6 w-full max-w-sm flex flex-col items-center">
+                <div
+                  onClick={() => {
+                    if (!isSimulatingRecord) {
+                      setIsSimulatingRecord(true);
+                    } else {
+                      setSimulatedEmotionIndex((prev) => (prev + 1) % emotionModes.length);
+                    }
+                  }}
+                  className="relative group cursor-pointer select-none transition-all duration-300 transform hover:scale-[1.02]"
+                  title="Click to cycle desktop app live emotion simulation"
+                >
+                  {/* Pulsing Aura */}
+                  {isSimulatingRecord && (
+                    <div
+                      className="absolute -inset-1 rounded-full border animate-[aura-wave_1.5s_cubic-bezier(0.4,0,0.2,1)_infinite] pointer-events-none"
+                      style={{ borderColor: `${currentEmotion.color}55` }}
+                    />
+                  )}
+
+                  {/* Floating Pill Container */}
+                  <div
+                    className="relative px-4 py-2 rounded-full flex items-center justify-between gap-4 bg-[#0a0c10]/95 border shadow-[0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-xl transition-all duration-300"
+                    style={{
+                      borderColor: isSimulatingRecord ? `${currentEmotion.color}66` : '#2A3144',
+                      boxShadow: isSimulatingRecord
+                        ? `0 8px 32px rgba(0,0,0,0.5), 0 0 16px ${currentEmotion.color}33`
+                        : '0 8px 32px rgba(0,0,0,0.4)',
+                    }}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      {/* Brand Logo */}
+                      <div className="w-6 h-6 rounded-lg bg-[#121622] border border-[#232b3e] flex items-center justify-center p-0.5 shrink-0">
+                        <Image src="/logo.svg" alt="Wisper Logo" width={16} height={16} className="w-4 h-4" style={{ width: 'auto', height: 'auto' }} />
+                      </div>
+
+                      {/* Live Equalizer Waveform */}
+                      <div className="flex items-center gap-0.5 h-5 px-0.5">
+                        {[0.6, 1.2, 0.8, 1.5, 0.7, 1.1, 0.5].map((mult, i) => (
+                          <div
+                            key={i}
+                            className="w-[2.5px] rounded-full transition-all duration-150"
+                            style={{
+                              height: isSimulatingRecord ? `${Math.max(4, 16 * mult)}px` : '4px',
+                              backgroundColor: isSimulatingRecord ? currentEmotion.color : '#3A4560',
+                              boxShadow: isSimulatingRecord ? `0 0 6px ${currentEmotion.color}88` : 'none',
+                              animation: !isSimulatingRecord ? `wispr-idle-pulse 1.4s ease-in-out ${i * 0.08}s infinite` : undefined,
+                            }}
+                          />
+                        ))}
+                      </div>
+
+                      <span className="text-xs font-semibold text-zinc-200 whitespace-nowrap">
+                        {isSimulatingRecord ? currentEmotion.hint : 'Listening…'}
+                      </span>
+                    </div>
+
+                    {/* Emotion Badge & Shortcut */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span
+                        className="text-[10px] font-semibold px-2 py-0.5 rounded-md border flex items-center gap-1 transition-all duration-300"
+                        style={{
+                          backgroundColor: '#131824',
+                          borderColor: `${currentEmotion.color}44`,
+                          color: currentEmotion.color,
+                        }}
+                      >
+                        <Activity className="w-2.5 h-2.5" />
+                        <span>{currentEmotion.label}</span>
+                      </span>
+                      <span className="text-[10px] font-mono text-zinc-400 bg-[#18181b] px-1.5 py-0.5 rounded border border-[#27272a]">
+                        fn
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-[11px] text-zinc-500 mt-2.5 font-mono flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Native macOS Floating Pill Preview (Click to test tone)</span>
+                </p>
+              </div>
+            );
+          })()}
+
 
           {/* Headline */}
           <h1 className="text-3xl sm:text-5xl font-bold tracking-tight text-white mb-3">
@@ -591,7 +683,7 @@ export default function LandingPage() {
           {/* Left: Brand mark */}
           <div className="flex items-center gap-2">
             <div className="w-5 h-5 rounded bg-[#18181b] border border-[#27272a] flex items-center justify-center">
-              <Image src="/logo.svg" alt="Wisper Logo" width={14} height={14} className="w-3.5 h-3.5" />
+              <Image src="/logo.svg" alt="Wisper Logo" width={14} height={14} className="w-3.5 h-3.5" style={{ width: 'auto', height: 'auto' }} />
             </div>
             <span className="font-semibold text-sm text-white">Wisper Emotion</span>
           </div>

@@ -139,6 +139,7 @@ export class AudioPipeline extends EventEmitter {
   private chain: Chain;
   private queue = new UtteranceQueue();
   private history = new HistoryStore();
+  private liveEmotionInterval: any = null;
 
   constructor(rootDir: string = process.cwd(), config?: AudioPipelineConfig) {
     super();
@@ -285,6 +286,16 @@ export class AudioPipeline extends EventEmitter {
     this.recorder.beginUtterance();
     this.emit('recording_started', { context: this.ctx });
 
+    this.liveEmotionInterval = setInterval(() => {
+      if (this.isRecording) {
+        const pcm = this.recorder.snapshotUtterance();
+        if (pcm.length > 16000 * 0.5) {
+          const emo = detectEmotion(pcm);
+          this.emit('live_emotion', emo);
+        }
+      }
+    }, 1000);
+
     // Batch mode: final Whisper pass on stop only (paste once into focused app).
     // Live streaming stays available later via config; UI must not show a transcript modal.
   }
@@ -300,6 +311,11 @@ export class AudioPipeline extends EventEmitter {
     context: UtteranceContext;
     rawText: string;
   }> {
+    if (this.liveEmotionInterval) {
+      clearInterval(this.liveEmotionInterval);
+      this.liveEmotionInterval = null;
+    }
+
     if (!this.isRecording) {
       return {
         text: '',
@@ -317,7 +333,7 @@ export class AudioPipeline extends EventEmitter {
     }
 
     const committedLive = this.liveCommitted;
-    const { pcm, peakRms } = this.recorder.endUtterance();
+    const { pcm, peakRms } = await this.recorder.endUtterance();
     this.emit('recording_stopped');
 
     if (isSilentPcm(pcm)) {
@@ -398,6 +414,10 @@ export class AudioPipeline extends EventEmitter {
   }
 
   public shutdown(): void {
+    if (this.liveEmotionInterval) {
+      clearInterval(this.liveEmotionInterval);
+      this.liveEmotionInterval = null;
+    }
     this.streamer?.stop();
     this.recorder.stopMic();
   }

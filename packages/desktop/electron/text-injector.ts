@@ -123,7 +123,8 @@ export async function injectTextSystemWide(
 
   const method = pickMethod(hints);
   clipboard.writeText(text);
-  await delay(80);
+  await delay(30);
+
 
   if (method === 'clipboard_only') {
     return { success: true, inserted: false, copied: true, cursorFound: false, method };

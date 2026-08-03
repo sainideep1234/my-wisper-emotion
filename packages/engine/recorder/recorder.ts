@@ -25,7 +25,8 @@ export class Recorder extends EventEmitter {
   private stream: any = null;
   private running = false;
   private capturing = false;
-  private utterance: number[] = [];
+  private utteranceBuffer: Float32Array;
+  private utteranceLength = 0;
   private peakRms = 0;
   private pending: number[] = [];
 
@@ -36,6 +37,7 @@ export class Recorder extends EventEmitter {
     this.maxSamples = (config.maxSeconds ?? 600) * this.sampleRate;
     this.framesPerBuffer = config.framesPerBuffer ?? 320;
     this.getAudio = config.getAudio;
+    this.utteranceBuffer = new Float32Array(this.maxSamples);
     // Keep ~ preroll + a little headroom in the always-on ring
     this.ring = new RingBuffer(Math.max(this.prerollSamples * 2, this.sampleRate * 2));
   }
@@ -98,25 +100,28 @@ export class Recorder extends EventEmitter {
   /** Begin an utterance — includes ~prerollMs of audio from before the hotkey. */
   beginUtterance(): void {
     const preroll = this.ring.snapshot(this.prerollSamples);
-    this.utterance = Array.from(preroll);
+    this.utteranceLength = preroll.length;
+    this.utteranceBuffer.set(preroll, 0);
     this.peakRms = pcmRms(preroll);
     this.capturing = true;
     this.emit('utterance_started', { prerollSamples: preroll.length });
   }
 
-  /** End utterance and return the full PCM (pre-roll + spoken). */
-  endUtterance(): { pcm: Float32Array; peakRms: number } {
+  /** End utterance and return the full PCM (pre-roll + spoken). Wait for a short flush to capture trailing OS audio buffers. */
+  async endUtterance(flushMs: number = 300): Promise<{ pcm: Float32Array; peakRms: number }> {
+    // Wait briefly to allow in-transit OS audio chunks to arrive
+    await new Promise((resolve) => setTimeout(resolve, flushMs));
     this.capturing = false;
-    const pcm = Float32Array.from(this.utterance);
+    const pcm = this.utteranceBuffer.slice(0, this.utteranceLength);
     const peakRms = this.peakRms;
-    this.utterance = [];
+    this.utteranceLength = 0;
     this.emit('utterance_ended', { samples: pcm.length, peakRms });
     return { pcm, peakRms };
   }
 
   /** Live snapshot of the current utterance buffer (for streaming passes). */
   snapshotUtterance(): Float32Array {
-    return Float32Array.from(this.utterance);
+    return this.utteranceBuffer.slice(0, this.utteranceLength);
   }
 
   private onChunk(chunk: Buffer): void {
@@ -132,9 +137,15 @@ export class Recorder extends EventEmitter {
 
       if (this.capturing) {
         if (rms > this.peakRms) this.peakRms = rms;
-        for (let i = 0; i < frame.length; i++) this.utterance.push(frame[i]!);
-        if (this.utterance.length > this.maxSamples) {
-          this.utterance = this.utterance.slice(-this.maxSamples);
+        if (this.utteranceLength + frame.length <= this.maxSamples) {
+          this.utteranceBuffer.set(frame, this.utteranceLength);
+          this.utteranceLength += frame.length;
+        } else {
+          // Overflow shift
+          const space = this.maxSamples - frame.length;
+          this.utteranceBuffer.copyWithin(0, frame.length, this.utteranceLength);
+          this.utteranceBuffer.set(frame, space);
+          this.utteranceLength = this.maxSamples;
         }
         this.emit('audio_level', Math.min(1.0, rms * 5.0));
         this.emit('samples', frame);
@@ -144,4 +155,5 @@ export class Recorder extends EventEmitter {
       }
     }
   }
+
 }

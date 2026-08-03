@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   IconMic,
+  IconActivity,
   IconCpu,
   IconHeart,
   IconGear,
@@ -10,7 +11,6 @@ import {
   IconDownload,
   IconSpinner,
   IconShield,
-  IconActivity,
   IconBolt,
   IconFire,
   IconFace,
@@ -20,6 +20,7 @@ import {
   IconStar,
   IconClipboard,
   IconTrash,
+  IconLogo,
 } from './icons';
 
 interface ModelInfo {
@@ -345,10 +346,7 @@ export const App: React.FC = () => {
   // ── First-launch gate render ───────────────────────────────────────────────
   if (firstLaunchGate === 'checking') {
     return (
-      <div style={{
-        height: '100vh', width: '100vw', background: '#090B0E',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }} />
+      <div className="flex items-center justify-center h-screen w-screen bg-black" />
     );
   }
 
@@ -359,41 +357,22 @@ export const App: React.FC = () => {
     const isWaiting = setupPhase === 'waiting';
 
     return (
-      <div style={{
-        height: '100vh', width: '100vw', background: '#090B0E',
-        display: 'flex', flexDirection: 'column', alignItems: 'center',
-        justifyContent: 'center', fontFamily: 'var(--font-family)',
-        WebkitAppRegion: 'drag' as any,
-      }}>
+      <div className="flex flex-col items-center justify-center h-screen w-screen bg-black text-neutral-200" style={{ WebkitAppRegion: 'drag' as any }}>
         {/* App brand */}
-        <div style={{ marginBottom: 28, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            width: 40, height: 40, borderRadius: 10,
-            background: '#13161C', border: '1px solid #252D3D',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
+        <div className="flex items-center gap-3 mb-7">
+          <div className="w-10 h-10 rounded-xl bg-neutral-900 border border-neutral-800 flex items-center justify-center">
             <IconWaves size={20} color="#10B981" />
           </div>
-          <span style={{ fontSize: 18, fontWeight: 700, color: '#F1F5F9', letterSpacing: '-0.3px' }}>
+          <span className="text-lg font-bold text-neutral-200 tracking-tight">
             Wisper Emotion
           </span>
         </div>
 
         {/* Setup card */}
-        <div style={{
-          width: 420, background: '#13161C', border: '1px solid #1F2533',
-          borderRadius: 16, padding: '32px 32px 28px', WebkitAppRegion: 'no-drag' as any,
-        }}>
+        <div className="w-[420px] bg-[#0A0A0A] border border-neutral-900 rounded-2xl p-8 pb-7 shadow-2xl" style={{ WebkitAppRegion: 'no-drag' as any }}>
           {/* Header */}
           <div style={{ marginBottom: 24, textAlign: 'center' }}>
-            <div style={{
-              width: 52, height: 52, borderRadius: 14,
-              background: isDone ? '#064E3B' : isError ? '#450a0a' : '#1E2A40',
-              border: `1px solid ${isDone ? '#10B981' : isError ? '#ef4444' : '#3B82F6'}33`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 16px',
-              transition: 'all 0.4s ease',
-            }}>
+            <div className={`w-14 h-14 rounded-xl flex items-center justify-center mx-auto mb-4 transition-all duration-400 ease-in-out ${isDone ? 'bg-emerald-950 border border-emerald-500/30' : isError ? 'bg-red-950 border border-red-500/30' : 'bg-blue-950 border border-blue-500/30'}`}>
               {isDone
                 ? <IconCheck size={24} color="#10B981" />
                 : isError
@@ -402,10 +381,10 @@ export const App: React.FC = () => {
                       style={isDownloading || isWaiting ? { animation: 'pulse 1.5s ease-in-out infinite' } : {}} />
               }
             </div>
-            <h2 style={{ fontSize: 17, fontWeight: 700, color: '#F1F5F9', marginBottom: 6 }}>
+            <h2 className="text-[17px] font-bold text-neutral-100 mb-1.5">
               {isDone ? 'You\u2019re all set!' : isError ? 'Download failed' : 'Setting up Wisper'}
             </h2>
-            <p style={{ fontSize: 13, color: '#64748B', lineHeight: 1.55 }}>
+            <p className="text-[13px] text-neutral-400 leading-relaxed">
               {isDone
                 ? 'Whisper Base is ready. Opening the app\u2026'
                 : isError
@@ -493,38 +472,33 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="app-container">
+    <div className="flex h-screen w-screen bg-black text-neutral-200">
       {/* Sidebar */}
-      <aside className="sidebar">
-        <div className="sidebar-header">
-          <div
-            className="brand-icon-box"
-            style={{ borderColor: isRecording ? currentEmotionColor : undefined }}
-          >
-            <IconWaves size={16} color={isRecording ? currentEmotionColor : '#10B981'} />
-          </div>
+      <aside className="w-[228px] shrink-0 bg-[#0A0A0A] border-r border-neutral-900 flex flex-col p-[18px_12px] gap-2.5 z-10">
+        <div className="flex items-center gap-2.5 px-2 pb-4 mb-1.5 border-b border-neutral-900/50">
+          <IconLogo size={26} />
           <div>
-            <div className="brand-title">Wispr Flow</div>
-            <div className="brand-subtitle">Voice &amp; Emotion Engine</div>
+            <div className="text-sm font-bold tracking-tight text-neutral-200 leading-tight">Wisper Emotion</div>
+            <div className="text-[10px] text-neutral-500 font-normal mt-[1px]">Voice &amp; Emotion Engine</div>
           </div>
         </div>
 
-        <nav className="sidebar-nav">
+        <nav className="flex flex-col gap-0.5 flex-1">
           <button
             className={`nav-item ${activeTab === 'dictate' ? 'active' : ''}`}
             onClick={() => setActiveTab('dictate')}
           >
-            <div className="nav-left">
+            <div className="flex items-center gap-2.5">
               <IconMic
                 size={16}
-                className="nav-icon"
+                className="w-4 h-4 opacity-80"
                 color={isRecording ? currentEmotionColor : undefined}
               />
               <span>Dictation</span>
             </div>
             {isRecording && (
               <span
-                className="nav-tag"
+                className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-900/50 text-neutral-500 flex items-center gap-1"
                 style={{ color: currentEmotionColor, backgroundColor: `${currentEmotionColor}22` }}
               >
                 {liveEmotion?.label || 'Live'}
@@ -536,11 +510,11 @@ export const App: React.FC = () => {
             className={`nav-item ${activeTab === 'models' ? 'active' : ''}`}
             onClick={() => setActiveTab('models')}
           >
-            <div className="nav-left">
-              <IconCpu size={16} className="nav-icon" />
+            <div className="flex items-center gap-2.5">
+              <IconCpu size={16} className="w-4 h-4 opacity-80" />
               <span>Models</span>
             </div>
-            <span className="nav-tag">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-900/50 text-neutral-500 flex items-center gap-1">
               {models.filter((m) => m.downloaded).length}/{models.length}
             </span>
           </button>
@@ -549,20 +523,21 @@ export const App: React.FC = () => {
             className={`nav-item ${activeTab === 'emotions' ? 'active' : ''}`}
             onClick={() => setActiveTab('emotions')}
           >
-            <div className="nav-left">
+            <div className="flex items-center gap-2.5">
               <IconHeart
                 size={16}
-                className="nav-icon"
+                className="w-4 h-4 opacity-80"
                 color={isRecording ? currentEmotionColor : undefined}
               />
               <span>Emotions</span>
             </div>
             {isRecording && (
               <span
-                className="nav-tag"
+                className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-900/50 text-neutral-500 flex items-center gap-1"
                 style={{ color: currentEmotionColor, backgroundColor: `${currentEmotionColor}22` }}
               >
-                <EmotionIcon label={liveEmotion?.label} size={11} />
+                <IconActivity size={11} color={currentEmotionColor} />
+                <span>{currentEmotionLabel}</span>
               </span>
             )}
           </button>
@@ -571,8 +546,8 @@ export const App: React.FC = () => {
             className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`}
             onClick={() => setActiveTab('settings')}
           >
-            <div className="nav-left">
-              <IconGear size={16} className="nav-icon" />
+            <div className="flex items-center gap-2.5">
+              <IconGear size={16} className="w-4 h-4 opacity-80" />
               <span>Settings</span>
             </div>
           </button>
@@ -581,34 +556,34 @@ export const App: React.FC = () => {
             className={`nav-item ${activeTab === 'clipboard' ? 'active' : ''}`}
             onClick={() => setActiveTab('clipboard')}
           >
-            <div className="nav-left">
-              <IconClipboard size={16} className="nav-icon" />
+            <div className="flex items-center gap-2.5">
+              <IconClipboard size={16} className="w-4 h-4 opacity-80" />
               <span>Clipboard</span>
             </div>
             {clipboardHistory.length > 0 && (
-              <span className="nav-tag">{clipboardHistory.length}</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-900/50 text-neutral-500 flex items-center gap-1">{clipboardHistory.length}</span>
             )}
           </button>
         </nav>
 
-        <div className="sidebar-footer">
-          <div className="footer-title">Shortcuts</div>
-          <div className="keybind-row">
+        <div className="p-3.5 bg-[#0A0A0A] border border-neutral-900/50 rounded-xl flex flex-col gap-2.5">
+          <div className="text-[10px] font-bold text-neutral-600 uppercase tracking-wider">Shortcuts</div>
+          <div className="flex items-center justify-between text-[11px] text-neutral-500">
             <span>Hold to Speak</span>
             <span className="kbd">fn</span>
           </div>
-          <div className="keybind-row">
+          <div className="flex items-center justify-between text-[11px] text-neutral-500">
             <span>Hands-Free</span>
             <span className="kbd">fn + Space</span>
           </div>
-          <div className="keybind-row">
+          <div className="flex items-center justify-between text-[11px] text-neutral-500">
             <span>Toggle</span>
             <span className="kbd">⌘ ⌥ Space</span>
           </div>
         </div>
       </aside>
 
-      <main className="main-content">
+      <main className="flex-1 flex flex-col overflow-y-auto p-[26px_32px]">
         {!accessibilityGranted && (
           <div
             className="card animate-fade-in"
@@ -620,7 +595,7 @@ export const App: React.FC = () => {
               borderStyle: 'solid',
             }}
           >
-            <div className="card-title-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <div className="flex items-center justify-between gap-2" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
               <div style={{
                 width: 24, height: 24, borderRadius: '50%',
                 backgroundColor: '#EF444422', display: 'flex', alignItems: 'center', justifyContent: 'center'
@@ -660,15 +635,15 @@ export const App: React.FC = () => {
         {/* ── DICTATE ── */}
         {activeTab === 'dictate' && (
           <div>
-            <div className="page-header">
+            <div className="flex items-start justify-between mb-6">
               <div>
-                <h1 className="page-title">Voice Dictation</h1>
-                <p className="page-subtitle">
+                <h1 className="text-xl font-bold text-neutral-200 tracking-tight leading-tight">Voice Dictation</h1>
+                <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
                   Real-time emotion-aware voice dictation across system applications.
                 </p>
               </div>
               <span
-                className="badge"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap"
                 style={{
                   borderColor: isRecording ? `${currentEmotionColor}66` : undefined,
                   backgroundColor: isRecording ? `${currentEmotionColor}15` : undefined,
@@ -683,20 +658,20 @@ export const App: React.FC = () => {
               </span>
             </div>
 
-            <div className="card-grid">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4 mb-6">
               <div
-                className="card"
+                className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-3.5"
                 style={{
                   borderColor: isRecording ? `${currentEmotionColor}66` : undefined,
                   boxShadow: isRecording ? `0 0 24px ${currentEmotionColor}25` : undefined,
                   transition: 'all 0.3s ease',
                 }}
               >
-                <div className="card-title-row">
-                  <span className="card-title">Live Voice Trigger</span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Live Voice Trigger</span>
                   {isRecording && liveEmotion && (
                     <span
-                      className="badge"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap"
                       style={{
                         backgroundColor: `${currentEmotionColor}25`,
                         color: currentEmotionColor,
@@ -733,10 +708,10 @@ export const App: React.FC = () => {
                 </button>
               </div>
 
-              <div className="card">
-                <div className="card-title-row">
-                  <span className="card-title">Active Whisper Model</span>
-                  {activeModel && <span className="badge">{activeModel.weightSize}</span>}
+              <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-3.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Active Whisper Model</span>
+                  {activeModel && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap">{activeModel.weightSize}</span>}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <span style={{ fontSize: '15px', fontWeight: 600, color: '#F8FAFC' }}>
@@ -754,28 +729,28 @@ export const App: React.FC = () => {
             </h2>
 
             {history.length === 0 ? (
-              <div className="card" style={{ padding: '36px', textAlign: 'center', color: '#94A3B8' }}>
+              <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-3.5" style={{ padding: '36px', textAlign: 'center', color: '#94A3B8' }}>
                 <p>
                   No audio transcribed yet. Hold <span className="kbd">fn</span> in any app to
                   dictate.
                 </p>
               </div>
             ) : (
-              <div className="history-list">
+              <div className="flex flex-col gap-3">
                 {history.map((item) => {
                   const emoColor = getEmotionColor(item.emotion?.label);
                   return (
                     <div
                       key={item.id}
-                      className="history-card"
+                      className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-[16px_18px] flex flex-col gap-2.5 shadow-sm"
                       style={{ borderLeft: `3px solid ${emoColor}` }}
                     >
-                      <div className="history-meta">
+                      <div className="flex items-center justify-between text-[11px] text-neutral-500 gap-2">
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <span>{item.timestamp}</span>
                           {item.emotion?.label && (
                             <span
-                              className="badge"
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap"
                               style={{
                                 backgroundColor: `${emoColor}20`,
                                 color: emoColor,
@@ -790,7 +765,7 @@ export const App: React.FC = () => {
                         </div>
                         <button
                           onClick={() => handleCopyText(item.id, item.text)}
-                          className="select-btn"
+                          className="px-3 py-1.5 rounded-md bg-[#0A0A0A] border border-neutral-800 text-neutral-200 text-[11px] font-medium cursor-pointer transition-all duration-150 inline-flex items-center gap-1.5 whitespace-nowrap hover:bg-white/5"
                           style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
                         >
                           {copiedId === item.id ? (
@@ -801,7 +776,7 @@ export const App: React.FC = () => {
                           <span>{copiedId === item.id ? 'Copied' : 'Copy'}</span>
                         </button>
                       </div>
-                      <p className="history-text">{item.text}</p>
+                      <p className="text-[13px] leading-relaxed text-neutral-200">{item.text}</p>
                     </div>
                   );
                 })}
@@ -813,17 +788,17 @@ export const App: React.FC = () => {
         {/* ── MODELS ── */}
         {activeTab === 'models' && (
           <div>
-            <div className="page-header">
+            <div className="flex items-start justify-between mb-6">
               <div>
-                <h1 className="page-title">Whisper Speech Models</h1>
-                <p className="page-subtitle">
+                <h1 className="text-xl font-bold text-neutral-200 tracking-tight leading-tight">Whisper Speech Models</h1>
+                <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
                   {models.filter((m) => m.downloaded).length} of {models.length} models downloaded
                   locally.
                 </p>
               </div>
             </div>
 
-            <table className="model-table">
+            <table className="w-full border-collapse border border-neutral-900 rounded-xl overflow-hidden bg-[#0A0A0A]">
               <thead>
                 <tr>
                   <th>Model Name</th>
@@ -846,13 +821,13 @@ export const App: React.FC = () => {
                         </div>
                       </td>
                       <td>
-                        <span className="badge">{m.weightSize}</span>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap">{m.weightSize}</span>
                       </td>
                       <td>{m.ramRequired}</td>
                       <td>
                         {isDownloading ? (
                           <span
-                            className="badge"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap"
                             style={{ backgroundColor: '#1E2C40', color: '#60A5FA' }}
                           >
                             <IconSpinner
@@ -863,14 +838,14 @@ export const App: React.FC = () => {
                           </span>
                         ) : m.downloaded ? (
                           <span
-                            className="badge"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap"
                             style={{ backgroundColor: '#064E3B', color: '#6EE7B7' }}
                           >
                             Downloaded
                           </span>
                         ) : (
                           <span
-                            className="badge"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap"
                             style={{ backgroundColor: '#1C2029', color: '#94A3B8' }}
                           >
                             Not Downloaded
@@ -881,7 +856,7 @@ export const App: React.FC = () => {
                         {!m.downloaded && !isDownloading && (
                           <button
                             onClick={() => handleDownload(m)}
-                            className="select-btn"
+                            className="px-3 py-1.5 rounded-md bg-[#0A0A0A] border border-neutral-800 text-neutral-200 text-[11px] font-medium cursor-pointer transition-all duration-150 inline-flex items-center gap-1.5 whitespace-nowrap hover:bg-white/5"
                             style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
                           >
                             <IconDownload size={12} />
@@ -908,16 +883,16 @@ export const App: React.FC = () => {
         {/* ── EMOTIONS ── */}
         {activeTab === 'emotions' && (
           <div>
-            <div className="page-header">
+            <div className="flex items-start justify-between mb-6">
               <div>
-                <h1 className="page-title">Emotion Analytics</h1>
-                <p className="page-subtitle">
+                <h1 className="text-xl font-bold text-neutral-200 tracking-tight leading-tight">Emotion Analytics</h1>
+                <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
                   Live acoustic tone analysis and session mood distribution.
                 </p>
               </div>
               {isRecording ? (
                 <span
-                  className="badge badge--live"
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap"
                   style={{
                     backgroundColor: `${currentEmotionColor}20`,
                     color: currentEmotionColor,
@@ -928,33 +903,33 @@ export const App: React.FC = () => {
                   Analyzing
                 </span>
               ) : (
-                <span className="badge">Standby</span>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap">Standby</span>
               )}
             </div>
 
             {/* ── Live Tone Card ── */}
             <div
-              className="emo-live-card"
+              className="grid grid-cols-[200px_auto_1fr] gap-0 bg-[#0A0A0A] border border-neutral-900 rounded-2xl overflow-hidden mb-7 transition-all duration-300 min-h-[220px]"
               style={{
                 borderColor: isRecording ? `${currentEmotionColor}55` : '#1E2430',
                 boxShadow: isRecording ? `0 0 40px ${currentEmotionColor}18` : 'none',
               }}
             >
               {/* Left: dominant emotion */}
-              <div className="emo-live-left">
-                <div className="emo-icon-ring" style={{ borderColor: `${currentEmotionColor}40`, backgroundColor: `${currentEmotionColor}10` }}>
+              <div className="flex flex-col items-center justify-center p-[28px_20px] gap-2.5 text-center bg-[#050505]">
+                <div className="w-[72px] h-[72px] rounded-full border-[1.5px] flex items-center justify-center transition-all duration-300" style={{ borderColor: `${currentEmotionColor}40`, backgroundColor: `${currentEmotionColor}10` }}>
                   <EmotionIcon
                     label={isRecording ? liveEmotion?.label : history[0]?.emotion?.label}
                     size={36}
                     color={currentEmotionColor}
                   />
                 </div>
-                <div className="emo-live-label" style={{ color: currentEmotionColor }}>
+                <div className="text-[17px] font-bold tracking-tight transition-colors duration-300" style={{ color: currentEmotionColor }}>
                   {isRecording
                     ? liveEmotion?.label || 'Listening…'
                     : history[0]?.emotion?.label || 'Neutral'}
                 </div>
-                <div className="emo-live-sub">
+                <div className="text-[11px] text-neutral-500 tracking-wide">
                   {isRecording
                     ? `${Math.round((liveEmotion?.confidence || 0.85) * 100)}% confidence`
                     : 'Acoustic Tone Index'}
@@ -962,10 +937,10 @@ export const App: React.FC = () => {
               </div>
 
               {/* Divider */}
-              <div className="emo-divider" />
+              <div className="w-[1px] bg-neutral-900 my-5" />
 
               {/* Right: probability bars */}
-              <div className="emo-bars-grid">
+              <div className="flex flex-col justify-center p-[24px_28px] gap-3">
                 {ALL_EMOTIONS.map((emo) => {
                   const emoColor = getEmotionColor(emo);
                   const isSelected =
@@ -978,15 +953,15 @@ export const App: React.FC = () => {
 
                   return (
                     <div key={emo} className={`emo-bar-row ${isSelected ? 'selected' : ''}`}>
-                      <div className="emo-bar-label">
+                      <div className="flex items-center gap-1.5 text-[12px] font-medium">
                         <div className="emo-bar-icon">
                           <EmotionIcon label={emo} size={13} color={isSelected ? emoColor : '#64748B'} />
                         </div>
                         <span style={{ color: isSelected ? '#F8FAFC' : '#94A3B8' }}>{emo}</span>
                       </div>
-                      <div className="emo-bar-track">
+                      <div className="h-1.5 bg-neutral-900 rounded-full overflow-hidden">
                         <div
-                          className="emo-bar-fill"
+                          className="h-full rounded-full transition-all duration-500 ease-in-out"
                           style={{
                             width: `${pct}%`,
                             backgroundColor: emoColor,
@@ -994,7 +969,7 @@ export const App: React.FC = () => {
                           }}
                         />
                       </div>
-                      <span className="emo-bar-pct" style={{ color: isSelected ? emoColor : '#475569' }}>
+                      <span className="text-[11px] font-semibold text-right tabular-nums transition-colors duration-300" style={{ color: isSelected ? emoColor : '#475569' }}>
                         {pct}%
                       </span>
                     </div>
@@ -1004,13 +979,13 @@ export const App: React.FC = () => {
             </div>
 
             {/* ── Mood Distribution ── */}
-            <div className="section-header">
+            <div className="flex items-center gap-1.5 mb-3.5">
               <IconActivity size={14} color="#94A3B8" />
-              <h2 className="section-title">Mood Distribution</h2>
-              <span className="section-count">{totalLogs} sessions</span>
+              <h2 className="text-[13px] font-semibold text-neutral-200 tracking-tight">Mood Distribution</h2>
+              <span className="text-[11px] text-neutral-500 px-2 py-0.5 bg-neutral-900 border border-neutral-800 rounded-full">{totalLogs} sessions</span>
             </div>
 
-            <div className="emo-dist-grid">
+            <div className="grid grid-cols-3 gap-3 mb-2">
               {ALL_EMOTIONS.map((emo) => {
                 const count = emotionCounts[emo] || 0;
                 const pct = totalLogs > 0 ? Math.round((count / totalLogs) * 100) : 0;
@@ -1018,22 +993,22 @@ export const App: React.FC = () => {
                 const barWidth = totalLogs > 0 ? (count / Math.max(...Object.values(emotionCounts))) * 100 : 0;
 
                 return (
-                  <div key={emo} className="emo-dist-card" style={{ borderTopColor: color }}>
+                  <div key={emo} className="bg-[#0A0A0A] border border-neutral-900 border-t-2 rounded-xl p-[14px_16px_12px] flex flex-col gap-2.5 transition-colors duration-150 hover:bg-white/5" style={{ borderTopColor: color }}>
                     <div className="emo-dist-top">
                       <div className="emo-dist-icon" style={{ backgroundColor: `${color}15`, borderColor: `${color}25` }}>
                         <EmotionIcon label={emo} size={18} color={color} />
                       </div>
                       <div>
                         <div className="emo-dist-name">{emo}</div>
-                        <div className="emo-dist-count">{count} <span>sessions</span></div>
+                        <div className="text-lg font-bold text-neutral-200 leading-tight mt-0.5">{count} <span>sessions</span></div>
                       </div>
-                      <div className="emo-dist-pct" style={{ color }}>
+                      <div className="ml-auto text-sm font-bold tabular-nums" style={{ color }}>
                         {pct}%
                       </div>
                     </div>
-                    <div className="emo-dist-bar-track">
+                    <div className="h-[3px] bg-neutral-900 rounded-sm overflow-hidden">
                       <div
-                        className="emo-dist-bar-fill"
+                        className="h-full rounded-sm transition-all duration-600 ease-in-out opacity-75"
                         style={{ width: `${barWidth}%`, backgroundColor: color }}
                       />
                     </div>
@@ -1043,14 +1018,14 @@ export const App: React.FC = () => {
             </div>
 
             {/* ── Emotion Log ── */}
-            <div className="section-header" style={{ marginTop: '28px' }}>
+            <div className="flex items-center gap-1.5 mb-3.5" style={{ marginTop: '28px' }}>
               <IconActivity size={14} color="#94A3B8" />
-              <h2 className="section-title">Classification Log</h2>
+              <h2 className="text-[13px] font-semibold text-neutral-200 tracking-tight">Classification Log</h2>
             </div>
 
-            <div className="history-list">
+            <div className="flex flex-col gap-3">
               {history.length === 0 ? (
-                <div className="card" style={{ padding: '36px', textAlign: 'center', color: '#64748B' }}>
+                <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-3.5" style={{ padding: '36px', textAlign: 'center', color: '#64748B' }}>
                   <p>Emotion classifications appear here when you speak into the microphone.</p>
                 </div>
               ) : (
@@ -1059,14 +1034,14 @@ export const App: React.FC = () => {
                   return (
                     <div
                       key={item.id}
-                      className="history-card"
+                      className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-[16px_18px] flex flex-col gap-2.5 shadow-sm"
                       style={{ borderLeft: `3px solid ${emoColor}` }}
                     >
-                      <div className="history-meta">
+                      <div className="flex items-center justify-between text-[11px] text-neutral-500 gap-2">
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <span>{item.timestamp}</span>
                           <span
-                            className="badge"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap"
                             style={{
                               backgroundColor: `${emoColor}25`,
                               color: emoColor,
@@ -1080,7 +1055,7 @@ export const App: React.FC = () => {
                         </div>
                         <button
                           onClick={() => handleCopyText(item.id, item.text)}
-                          className="select-btn"
+                          className="px-3 py-1.5 rounded-md bg-[#0A0A0A] border border-neutral-800 text-neutral-200 text-[11px] font-medium cursor-pointer transition-all duration-150 inline-flex items-center gap-1.5 whitespace-nowrap hover:bg-white/5"
                           style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
                         >
                           {copiedId === item.id ? (
@@ -1091,7 +1066,7 @@ export const App: React.FC = () => {
                           <span>{copiedId === item.id ? 'Copied' : 'Copy'}</span>
                         </button>
                       </div>
-                      <p className="history-text">{item.text}</p>
+                      <p className="text-[13px] leading-relaxed text-neutral-200">{item.text}</p>
                     </div>
                   );
                 })
@@ -1103,14 +1078,14 @@ export const App: React.FC = () => {
         {/* ── SETTINGS ── */}
         {activeTab === 'settings' && (
           <div>
-            <div className="page-header">
+            <div className="flex items-start justify-between mb-6">
               <div>
-                <h1 className="page-title">Settings &amp; Permissions</h1>
-                <p className="page-subtitle">Configure system text injection and macOS shortcuts.</p>
+                <h1 className="text-xl font-bold text-neutral-200 tracking-tight leading-tight">Settings &amp; Permissions</h1>
+                <p className="text-xs text-neutral-500 mt-1 leading-relaxed">Configure system text injection and macOS shortcuts.</p>
               </div>
             </div>
 
-            <div className="card" style={{ gap: '18px' }}>
+            <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-3.5" style={{ gap: '18px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
                   <div style={{ fontSize: '14px', fontWeight: 600 }}>Accessibility Text Injection</div>
@@ -1118,7 +1093,7 @@ export const App: React.FC = () => {
                     Pastes transcribed text via native Cmd+V into the active input field.
                   </div>
                 </div>
-                <span className="badge" style={{ backgroundColor: '#064E3B', color: '#6EE7B7' }}>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap" style={{ backgroundColor: '#064E3B', color: '#6EE7B7' }}>
                   <IconShield size={12} /> Active
                 </span>
               </div>
@@ -1138,7 +1113,7 @@ export const App: React.FC = () => {
                     Shows a floating audio pill only while speaking with live emotion color feedback.
                   </div>
                 </div>
-                <span className="badge" style={{ backgroundColor: '#064E3B', color: '#6EE7B7' }}>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap" style={{ backgroundColor: '#064E3B', color: '#6EE7B7' }}>
                   Enabled
                 </span>
               </div>
@@ -1172,16 +1147,16 @@ export const App: React.FC = () => {
         {/* ── CLIPBOARD ── */}
         {activeTab === 'clipboard' && (
           <div>
-            <div className="page-header">
+            <div className="flex items-start justify-between mb-6">
               <div>
-                <h1 className="page-title">Clipboard History</h1>
-                <p className="page-subtitle">
+                <h1 className="text-xl font-bold text-neutral-200 tracking-tight leading-tight">Clipboard History</h1>
+                <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
                   Browse, search, copy and paste your history of copied and spoken text.
                 </p>
               </div>
               {clipboardHistory.length > 0 && (
                 <button
-                  className="select-btn"
+                  className="px-3 py-1.5 rounded-md bg-[#0A0A0A] border border-neutral-800 text-neutral-200 text-[11px] font-medium cursor-pointer transition-all duration-150 inline-flex items-center gap-1.5 whitespace-nowrap hover:bg-white/5"
                   style={{ display: 'flex', alignItems: 'center', gap: '5px', borderColor: '#E11D48', color: '#FDA4AF' }}
                   onClick={handleClearClipboard}
                 >
@@ -1222,7 +1197,7 @@ export const App: React.FC = () => {
 
               if (filtered.length === 0) {
                 return (
-                  <div className="card" style={{ padding: '48px', textAlign: 'center', color: '#64748B' }}>
+                  <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-3.5" style={{ padding: '48px', textAlign: 'center', color: '#64748B' }}>
                     <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
                       <IconClipboard size={24} color="#56637A" />
                     </div>
@@ -1232,15 +1207,15 @@ export const App: React.FC = () => {
               }
 
               return (
-                <div className="history-list">
+                <div className="flex flex-col gap-3">
                   {filtered.map((item) => (
-                    <div key={item.id} className="history-card" style={{ borderLeft: '3px solid #64748B' }}>
-                      <div className="history-meta">
+                    <div key={item.id} className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-[16px_18px] flex flex-col gap-2.5 shadow-sm" style={{ borderLeft: '3px solid #64748B' }}>
+                      <div className="flex items-center justify-between text-[11px] text-neutral-500 gap-2">
                         <span>{item.timestamp}</span>
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <button
                             onClick={() => handleCopyText(item.id, item.text)}
-                            className="select-btn"
+                            className="px-3 py-1.5 rounded-md bg-[#0A0A0A] border border-neutral-800 text-neutral-200 text-[11px] font-medium cursor-pointer transition-all duration-150 inline-flex items-center gap-1.5 whitespace-nowrap hover:bg-white/5"
                             style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
                           >
                             {copiedId === item.id ? <IconCheck size={12} /> : <IconCopy size={12} />}
@@ -1293,7 +1268,7 @@ export const App: React.FC = () => {
               <h2 style={{ fontSize: 18, fontWeight: 700, color: '#F1F5F9', marginBottom: 6 }}>
                 New Update Available!
               </h2>
-              <span className="badge" style={{ backgroundColor: '#3B82F622', color: '#60A5FA', borderColor: '#3B82F633' }}>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap" style={{ backgroundColor: '#3B82F622', color: '#60A5FA', borderColor: '#3B82F633' }}>
                 v{updateInfo.version}
               </span>
             </div>
@@ -1315,7 +1290,7 @@ export const App: React.FC = () => {
             {/* Actions */}
             <div style={{ display: 'flex', gap: 12 }}>
               <button
-                className="select-btn"
+                className="px-3 py-1.5 rounded-md bg-[#0A0A0A] border border-neutral-800 text-neutral-200 text-[11px] font-medium cursor-pointer transition-all duration-150 inline-flex items-center gap-1.5 whitespace-nowrap hover:bg-white/5"
                 style={{ flex: 1, padding: '10px 0', fontSize: 13, fontWeight: 600 }}
                 onClick={() => setUpdateInfo(null)}
               >

@@ -1,17 +1,30 @@
 import { app, BrowserWindow, ipcMain, screen, clipboard, systemPreferences, globalShortcut, shell } from 'electron';
 import path from 'path';
 import https from 'https';
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import { uIOhook, UiohookKey } from 'uiohook-napi';
 import { AudioPipeline, AVAILABLE_MODELS } from '../../engine/pipeline.ts';
 import { downloadModelById, isModelDownloaded } from './download-model.js';
 import { getBackendPath, DEFAULT_MODEL_ID } from './paths.js';
 import { injectTextSystemWide } from './text-injector.js';
 
+// Prevent Electron main process crash on detached stdout/stderr pipes (EPIPE)
+process.stdout?.on?.('error', (err: any) => {
+    if (err?.code === 'EPIPE' || err?.syscall === 'write') return;
+});
+process.stderr?.on?.('error', (err: any) => {
+    if (err?.code === 'EPIPE' || err?.syscall === 'write') return;
+});
+process.on('uncaughtException', (err: any) => {
+    if (err?.code === 'EPIPE' || err?.syscall === 'write') return;
+    console.error('Uncaught Exception:', err);
+});
+
 let mainWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
 let pipeline: AudioPipeline | null = null;
-let fnPoller: ChildProcessWithoutNullStreams | null = null;
+let fnPoller: ChildProcess | null = null;
+
 
 let isFnPressed = false;
 let isSpacePressed = false;
@@ -54,16 +67,7 @@ function rememberTranscript(text: string, source: 'dictation' | 'clipboard' = 'd
 }
 
 function startClipboardPolling() {
-    setInterval(() => {
-        try {
-            const text = clipboard.readText();
-            if (text && text.trim() && text !== lastClipboardText) {
-                rememberTranscript(text, 'clipboard');
-            }
-        } catch (e) {
-            console.error('Clipboard poll error:', e);
-        }
-    }, 1000);
+    // No-op
 }
 
 function createMainWindow() {
@@ -327,9 +331,10 @@ function startFnPoller() {
     if (fnPoller) return;
     const bin = getFnPollerPath();
     try {
-        fnPoller = spawn(bin, [], { stdio: ['ignore', 'pipe', 'pipe'] });
+        const proc = spawn(bin, [], { stdio: ['ignore', 'pipe', 'pipe'] });
+        fnPoller = proc;
         let buf = '';
-        fnPoller.stdout.on('data', (chunk: Buffer) => {
+        proc.stdout?.on('data', (chunk: Buffer) => {
             buf += chunk.toString('utf8');
             const lines = buf.split('\n');
             buf = lines.pop() ?? '';
@@ -339,14 +344,21 @@ function startFnPoller() {
                 else if (t === 'up') onFnUp();
             }
         });
-        fnPoller.stderr.on('data', (chunk: Buffer) => {
+        proc.stdout?.on('error', (err: any) => {
+            if (err?.code === 'EPIPE') return;
+        });
+        proc.stderr?.on('data', (chunk: Buffer) => {
             console.warn('[fn-poll]', chunk.toString('utf8').trim());
         });
-        fnPoller.on('error', (err) => {
+        proc.stderr?.on('error', (err: any) => {
+            if (err?.code === 'EPIPE') return;
+        });
+
+        proc.on('error', (err: Error) => {
             console.warn('fn-poll failed to start:', err.message, '— build with: bun run build:fn-poll');
             fnPoller = null;
         });
-        fnPoller.on('exit', (code) => {
+        proc.on('exit', (code: number | null) => {
             console.warn(`fn-poll exited (${code})`);
             fnPoller = null;
         });
@@ -356,6 +368,7 @@ function startFnPoller() {
         console.warn('Could not start fn-poll:', msg);
     }
 }
+
 
 function stopFnPoller() {
     if (!fnPoller) return;
@@ -453,8 +466,9 @@ async function stopRecordingAndInject(overrideText?: string) {
     }
 
     // Let focus settle back on the target app, then paste once (no modal)
-    await delay(180);
+    await delay(60);
     const injection = text
+
         ? await injectTextSystemWide(text, currentTargetHints)
         : { success: false, inserted: false, copied: false, cursorFound: false };
 
