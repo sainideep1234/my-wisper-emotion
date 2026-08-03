@@ -240,7 +240,10 @@ export default function LandingPage() {
                   </div>
                 </div>
                 <p className="text-[11px] text-zinc-500 mt-2.5 font-mono flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span 
+                    className="w-1.5 h-1.5 rounded-full animate-pulse transition-colors duration-300" 
+                    style={{ backgroundColor: currentEmotion.color }} 
+                  />
                   <span>Native macOS Floating Pill Preview (Click to test tone)</span>
                 </p>
               </div>
