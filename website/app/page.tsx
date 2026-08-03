@@ -36,7 +36,7 @@ export default function LandingPage() {
     if (!isSimulatingRecord) return;
     const interval = setInterval(() => {
       setSimulatedEmotionIndex((prev) => (prev + 1) % emotionModes.length);
-    }, 500);
+    }, 3000);
     return () => clearInterval(interval);
   }, [isSimulatingRecord, emotionModes.length]);
 
