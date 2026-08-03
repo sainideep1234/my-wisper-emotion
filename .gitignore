@@ -1,101 +1,36 @@
-<<<<<<< HEAD
-# Dependencies
 node_modules/
-
-# Build output
 dist/
 out/
 release/
-=======
-# dependencies (bun install)
-node_modules
-**/node_modules
-
-# output
-out
-dist
-dist-electron
-**/dist
-**/dist-electron
->>>>>>> origin/main
 *.tgz
-
-# Native compiled binaries & addons
 bin/
 packages/desktop/bin/
 *.node
 packages/desktop/electron/native-paste/build/
 packages/desktop/electron/native-paste/node_modules/
-
-# AI/ML models & weights (downloaded at runtime)
 models/
 *.bin
 *.onnx
 *.onnx.data
 *.pt
-
-# whisper.cpp (cloned/built locally)
 whisper.cpp/
-
-# Python tooling (if used for one-off exports)
 .venv*/
 __pycache__/
-
-# Environment variables
 .env
 .env.*local
-
-# Logs
 logs/
 *.log
 .geminiignore
 .cursorignore
 .ignore
 .rgignore
-
-# Coverage & caches
 coverage/
 *.lcov
 .eslintcache
 .cache
 *.tsbuildinfo
-
-# OS files
 .DS_Store
 Thumbs.db
-
-<<<<<<< HEAD
-# Editor / IDE config (personal)
 .idea/
 .vscode/
 .cursor/
-.cursorignore
-.geminiignore
-.ignore
-.rgignore
-=======
-# Python export tooling + large checkpoints
-.venv-export/
-models/emotion/_export/
-models/emotion/*.onnx.data
-models/emotion/*.onnx
-models/whisper/*.bin
-*.pt
-
-# Backend model weights — downloaded at runtime, NOT committed to git
-backend/models/whisper/*.bin
-backend/models/emotion/*.onnx
-backend/models/emotion/*.onnx.data
-backend/models/vad/*.onnx
-
-# Electron build output — large binaries, use GitHub Releases instead
-frontend/release/
-frontend/dist-electron/
-
-# DMG in public/downloads — served via GitHub Releases CDN in production
-# The file can be symlinked/copied locally for dev, but not committed
-website/public/downloads/*.dmg
-
-# Native C++ source (whisper.cpp submodule — handled separately)
-backend/whisper.cpp/
->>>>>>> origin/main
