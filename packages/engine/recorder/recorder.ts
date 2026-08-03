@@ -53,9 +53,9 @@ export class Recorder extends EventEmitter {
 
     const audio = this.getAudio();
     const inputs = audio.getDevices().filter((d: { maxInputChannels: number }) => d.maxInputChannels > 0);
-    const deviceId = inputs.length > 0 ? inputs[0].id : -1;
+    const deviceId = -1; // Always use default device (-1) for better reliability on macOS
     if (inputs.length > 0) {
-      console.log(`mic [${inputs[0].id}] ${inputs[0].name}`);
+      console.log(`mic [default] using default device (found ${inputs.length} inputs)`);
     } else {
       console.warn('no microphone input devices found');
     }

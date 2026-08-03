@@ -143,7 +143,11 @@ export class AudioPipeline extends EventEmitter {
   constructor(rootDir: string = process.cwd(), config?: AudioPipelineConfig) {
     super();
     this.rootDir = rootDir;
-    this.repoRoot = path.resolve(rootDir, '..');
+    let current = rootDir;
+    while (current !== '/' && !fs.existsSync(path.join(current, 'whisper.cpp'))) {
+      current = path.dirname(current);
+    }
+    this.repoRoot = fs.existsSync(path.join(current, 'whisper.cpp')) ? current : path.resolve(rootDir, '..');
     this.activeModelId = config?.modelId || 'base.en';
 
     this.transcriber = new Transcriber({ modelPath: '' });
