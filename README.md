@@ -14,27 +14,27 @@ Wisper Emotion uses a **Svara-style** pipeline architecture designed for zero-la
 
 ```mermaid
 flowchart TD
-    Hotkey[Hotkey or Hotword] --> Recorder
+    Hotkey["Hotkey or Hotword"] --> Recorder
     
-    subgraph Engine [Native Audio Engine]
-        Recorder[Recorder\n(1s pre-roll ring buffer)]
-        VAD[VAD Threshold]
-        Streamer[Live Partial Streamer\nLocalAgreement-2]
+    subgraph Engine ["Native Audio Engine"]
+        Recorder["Recorder\n(1s pre-roll ring buffer)"]
+        VAD["VAD Threshold"]
+        Streamer["Live Partial Streamer\nLocalAgreement-2"]
     end
     
     Recorder --> VAD
     Recorder --> Streamer
     
-    subgraph Context [System Context]
-        Provider[ContextProvider\nexe, title, locale]
+    subgraph Context ["System Context"]
+        Provider["ContextProvider\nexe, title, locale"]
     end
     
-    Provider --> Utterance[UtteranceContext]
+    Provider --> Utterance["UtteranceContext"]
     
-    subgraph Worker [Queue & Processing]
-        Queue[Queue Worker]
-        Transcriber[Transcriber\nwhisper.cpp]
-        Chain[Cleanup Chain\nfillers, retractions]
+    subgraph Worker ["Queue & Processing"]
+        Queue["Queue Worker"]
+        Transcriber["Transcriber\nwhisper.cpp"]
+        Chain["Cleanup Chain\nfillers, retractions"]
     end
     
     VAD --> Queue
@@ -42,9 +42,9 @@ flowchart TD
     Queue --> Transcriber
     Transcriber --> Chain
     
-    subgraph Output [Delivery]
-        Injector[TextInjector\n(macOS Accessibility)]
-        Emotion[Emotion Classifier]
+    subgraph Output ["Delivery"]
+        Injector["TextInjector\n(macOS Accessibility)"]
+        Emotion["Emotion Classifier"]
     end
     
     Chain --> Injector
