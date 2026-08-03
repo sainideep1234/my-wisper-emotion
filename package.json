@@ -15,6 +15,7 @@
     "build:app": "bun run build:desktop && bunx electron-builder --mac"
   },
   "build": {
+    "npmRebuild": false,
     "appId": "com.wisper.emotion",
     "productName": "Wisper",
     "directories": {
