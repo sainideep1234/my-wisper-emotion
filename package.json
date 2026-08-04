@@ -56,7 +56,7 @@
     ],
     "mac": {
       "target": "dmg",
-      "artifactName": "Wisper-Emotion-${version}-${arch}.${ext}",
+      "artifactName": "Wisper-Emotion-1.0.0-${arch}.${ext}",
       "hardenedRuntime": true,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist"
