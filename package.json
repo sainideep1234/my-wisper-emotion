@@ -12,7 +12,7 @@
     "setup": "bun install && bun run build:whisper-addon && bun run build:paste-helper && bun run build:fn-poll && cd packages/desktop && bun install && cd .. && bun run rebuild:electron",
     "dev": "cd packages/desktop && bun run dev",
     "build:desktop": "cd packages/desktop && bun run build",
-    "build:app": "bun run build:desktop && bunx electron-builder --mac --publish never"
+    "release:mac": "rm -rf release && bun run build:desktop && bunx electron-builder --mac --publish never"
   },
   "build": {
     "npmRebuild": false,
@@ -58,7 +58,7 @@
     "mac": {
       "icon": "build/icon.png",
       "target": "dmg",
-      "artifactName": "Wisper-Emotion-1.0.0-${arch}.${ext}",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
       "hardenedRuntime": true,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist"

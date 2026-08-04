@@ -1,25 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 import https from 'https';
-import { getModelsDirPath, findModelFile } from './paths.js';
+import { getModelsDirPath } from './paths.js';
 import { AVAILABLE_MODELS } from '../../engine/pipeline.ts';
 
-export function isModelDownloaded(modelId: string): boolean {
-  const modelInfo = AVAILABLE_MODELS.find((m) => m.id === modelId);
-  if (!modelInfo) return false;
-
-  const found = findModelFile(modelInfo.filename);
-  if (found) {
-    modelInfo.downloaded = true;
-    return true;
-  }
-  return false;
-}
 
 export function downloadModelById(
   modelId: string,
   onProgress: (data: { modelId: string; percent: number; done: boolean; error?: string }) => void
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; already?: boolean }> {
   return new Promise((resolve) => {
     const modelInfo = AVAILABLE_MODELS.find((m) => m.id === modelId);
     if (!modelInfo) {
@@ -33,12 +22,18 @@ export function downloadModelById(
       fs.mkdirSync(modelsDir, { recursive: true });
     }
 
-    if (isModelDownloaded(modelId)) {
-      onProgress({ modelId, percent: 100, done: true });
-      return resolve({ success: true, already: true });
+    const targetPath = path.join(modelsDir, modelInfo.filename);
+    
+    if (fs.existsSync(targetPath)) {
+      try {
+        if (fs.statSync(targetPath).size > 10 * 1024 * 1024) {
+          modelInfo.downloaded = true;
+          onProgress({ modelId, percent: 100, done: true });
+          return resolve({ success: true, already: true });
+        }
+      } catch (e) {}
     }
 
-    const targetPath = path.join(modelsDir, modelInfo.filename);
     const tempPath = `${targetPath}.tmp`;
 
     const request = (url: string) => {

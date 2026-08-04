@@ -99,6 +99,7 @@ export interface AudioPipelineConfig {
   streamIntervalMs?: number;
   streamMinAudioS?: number;
   dictionary?: { replacements?: Record<string, string>; snippets?: Record<string, string> };
+  modelsPath?: string;
 }
 
 function loadNativeModule(name: string, roots: string[]): any {
@@ -127,6 +128,7 @@ export class AudioPipeline extends EventEmitter {
   private rootDir: string;
   private repoRoot: string;
   private activeModelId: string;
+  private modelsPath?: string;
   private isRecording = false;
   private ctx: UtteranceContext = emptyContext();
   private liveCommitted = '';
@@ -140,6 +142,7 @@ export class AudioPipeline extends EventEmitter {
   private queue = new UtteranceQueue();
   private history = new HistoryStore();
   private liveEmotionInterval: any = null;
+  private contextPromise: Promise<UtteranceContext> | null = null;
 
   constructor(rootDir: string = process.cwd(), config?: AudioPipelineConfig) {
     super();
@@ -150,6 +153,7 @@ export class AudioPipeline extends EventEmitter {
     }
     this.repoRoot = fs.existsSync(path.join(current, 'whisper.cpp')) ? current : path.resolve(rootDir, '..');
     this.activeModelId = config?.modelId || 'base.en';
+    this.modelsPath = config?.modelsPath;
 
     this.transcriber = new Transcriber({ modelPath: '' });
 
@@ -178,13 +182,17 @@ export class AudioPipeline extends EventEmitter {
   }
 
   private searchRoots(): string[] {
-    return [
+    const roots = [
       this.rootDir,
       this.repoRoot,
       process.cwd(),
       path.resolve(process.cwd(), '..'),
       path.resolve(process.cwd(), '../../packages/engine'),
     ];
+    if (this.modelsPath) {
+      roots.unshift(this.modelsPath);
+    }
+    return roots;
   }
 
   private getAudio(): any {
@@ -280,11 +288,12 @@ export class AudioPipeline extends EventEmitter {
       return;
     }
 
-    this.ctx = await this.contextProvider.capture();
-    this.emit('context', this.ctx);
-
+    // Call beginUtterance synchronously to immediately start capturing audio.
+    // This prevents a race condition if stopRecording is called before the async context capture completes.
     this.recorder.beginUtterance();
-    this.emit('recording_started', { context: this.ctx });
+
+    // Capture context asynchronously without blocking the recording pipeline.
+    this.contextPromise = this.contextProvider.capture();
 
     this.liveEmotionInterval = setInterval(() => {
       if (this.isRecording) {
@@ -296,8 +305,19 @@ export class AudioPipeline extends EventEmitter {
       }
     }, 1000);
 
-    // Batch mode: final Whisper pass on stop only (paste once into focused app).
-    // Live streaming stays available later via config; UI must not show a transcript modal.
+    try {
+      this.ctx = await this.contextPromise;
+    } finally {
+      this.contextPromise = null;
+    }
+
+    // If recording was stopped while we were awaiting context, don't emit started events.
+    if (!this.isRecording) {
+      return;
+    }
+
+    this.emit('context', this.ctx);
+    this.emit('recording_started', { context: this.ctx });
   }
 
   /**
@@ -334,6 +354,16 @@ export class AudioPipeline extends EventEmitter {
 
     const committedLive = this.liveCommitted;
     const { pcm, peakRms } = await this.recorder.endUtterance();
+
+    // If stopRecording was called before context capture finished, wait for it now
+    if (this.contextPromise) {
+      try {
+        this.ctx = await this.contextPromise;
+      } catch {
+        // Ignored, capture method handles its own errors
+      }
+    }
+
     this.emit('recording_stopped');
 
     if (isSilentPcm(pcm)) {

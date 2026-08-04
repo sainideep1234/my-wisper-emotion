@@ -3,7 +3,7 @@ import path from 'path';
 import Module from 'module';
 import https from 'https';
 import { spawn, type ChildProcess } from 'child_process';
-import type { UiohookNapi } from 'uiohook-napi';
+
 
 // ─── Native Module Path Injection (MUST run before any native require) ────────
 // extraResources places uiohook-napi/naudiodon at Resources/node_modules/.
@@ -29,8 +29,8 @@ if (!existingPaths.includes(nativePath)) {
 const { uIOhook, UiohookKey } = require('uiohook-napi') as typeof import('uiohook-napi');
 
 import { AudioPipeline, AVAILABLE_MODELS } from '../../engine/pipeline.ts';
-import { downloadModelById, isModelDownloaded } from './download-model.js';
-import { getBackendPath, DEFAULT_MODEL_ID } from './paths.js';
+import { downloadModelById } from './download-model.js';
+import { getBackendPath, DEFAULT_MODEL_ID, getModelsDirPath } from './paths.js';
 import { injectTextSystemWide } from './text-injector.js';
 
 // Prevent Electron main process crash on detached stdout/stderr pipes (EPIPE)
@@ -605,7 +605,8 @@ app.whenReady().then(async () => {
     setupGlobalHooks();
 
     const backendPath = getBackendPath();
-    pipeline = new AudioPipeline(backendPath);
+    const modelsDir = getModelsDirPath();
+    pipeline = new AudioPipeline(backendPath, { modelsPath: modelsDir });
 
     pipeline.on('audio_level', (level: number) => {
         sendToWindows('audio_level', level);
@@ -653,7 +654,8 @@ app.whenReady().then(async () => {
     });
 
     // First launch: auto-download the default Whisper model (base.en) if missing
-    if (!isModelDownloaded(DEFAULT_MODEL_ID)) {
+    const defaultModelDownloaded = pipeline?.refreshModelStatuses().find(m => m.id === DEFAULT_MODEL_ID)?.downloaded;
+    if (!defaultModelDownloaded) {
         sendToWindows('setup_started', { modelId: DEFAULT_MODEL_ID });
         downloadModelById(DEFAULT_MODEL_ID, (progress) => {
             sendToWindows('download_progress', progress);
@@ -803,7 +805,7 @@ ipcMain.handle('get_shift_c_paste_enabled', () => {
 });
 
 ipcMain.handle('is_setup_needed', () => {
-    return !isModelDownloaded(DEFAULT_MODEL_ID);
+    return !(pipeline?.refreshModelStatuses().find(m => m.id === DEFAULT_MODEL_ID)?.downloaded);
 });
 
 ipcMain.handle('check_microphone', () => {
@@ -846,7 +848,7 @@ ipcMain.handle('open_external_link', (_event, url: string) => {
 });
 
 ipcMain.handle('retry_setup', () => {
-    if (!isModelDownloaded(DEFAULT_MODEL_ID)) {
+    if (!(pipeline?.refreshModelStatuses().find(m => m.id === DEFAULT_MODEL_ID)?.downloaded)) {
         sendToWindows('setup_started', { modelId: DEFAULT_MODEL_ID });
         downloadModelById(DEFAULT_MODEL_ID, (progress) => {
             sendToWindows('download_progress', progress);
