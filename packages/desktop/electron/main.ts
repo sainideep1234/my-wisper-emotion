@@ -747,6 +747,8 @@ ipcMain.handle('download_model', async (_event, modelId: string) => {
 
     if (result.success && pipeline) {
         pipeline.refreshModelStatuses();
+        pipeline.setModel(modelId); // Automatically use the newly downloaded model
+        sendToWindows('model_changed', modelId);
         sendToWindows('pipeline_ready', {
             models: pipeline.refreshModelStatuses(),
             activeModel: pipeline.getActiveModelId(),

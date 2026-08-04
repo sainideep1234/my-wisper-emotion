@@ -1,6 +1,6 @@
 {
   "name": "wisper-emotion",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "private": true,
   "main": "packages/desktop/dist/electron/main.js",
   "scripts": {
@@ -8,7 +8,8 @@
     "build:whisper-addon": "bash scripts/build-whisper-addon.sh",
     "build:paste-helper": "mkdir -p bin packages/desktop/bin && clang -O2 -framework ApplicationServices packages/desktop/electron/native/paste.c -o bin/paste-helper && cp bin/paste-helper packages/desktop/bin/paste-helper",
     "build:fn-poll": "mkdir -p bin packages/desktop/bin && clang -O2 -framework ApplicationServices packages/desktop/electron/native/fn-poll.c -o bin/fn-poll && cp bin/fn-poll packages/desktop/bin/fn-poll",
-    "setup": "bun install && bun run build:whisper-addon && bun run build:paste-helper && bun run build:fn-poll && cd packages/desktop && bun install",
+    "rebuild:electron": "bunx @electron/rebuild -f && cd packages/desktop && bunx @electron/rebuild -f",
+    "setup": "bun install && bun run build:whisper-addon && bun run build:paste-helper && bun run build:fn-poll && cd packages/desktop && bun install && cd .. && bun run rebuild:electron",
     "dev": "cd packages/desktop && bun run dev",
     "build:desktop": "cd packages/desktop && bun run build",
     "build:app": "bun run build:desktop && bunx electron-builder --mac --publish never"
@@ -55,6 +56,7 @@
       }
     ],
     "mac": {
+      "icon": "build/icon.png",
       "target": "dmg",
       "artifactName": "Wisper-Emotion-1.0.0-${arch}.${ext}",
       "hardenedRuntime": true,

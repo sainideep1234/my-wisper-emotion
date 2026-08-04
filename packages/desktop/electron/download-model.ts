@@ -33,6 +33,11 @@ export function downloadModelById(
       fs.mkdirSync(modelsDir, { recursive: true });
     }
 
+    if (isModelDownloaded(modelId)) {
+      onProgress({ modelId, percent: 100, done: true });
+      return resolve({ success: true, already: true });
+    }
+
     const targetPath = path.join(modelsDir, modelInfo.filename);
     const tempPath = `${targetPath}.tmp`;
 
