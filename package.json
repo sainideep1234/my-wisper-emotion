@@ -12,7 +12,8 @@
     "setup": "bun install && bun run build:whisper-addon && bun run build:paste-helper && bun run build:fn-poll && cd packages/desktop && bun install && cd .. && bun run rebuild:electron",
     "dev": "cd packages/desktop && bun run dev",
     "build:desktop": "cd packages/desktop && bun run build",
-    "release:mac": "rm -rf release && bun run build:desktop && bunx electron-builder --mac --publish never"
+    "release:mac": "rm -rf release && bun run build:desktop && bunx electron-builder --mac --publish never",
+    "publish:release": "bash scripts/publish-release.sh"
   },
   "build": {
     "npmRebuild": false,

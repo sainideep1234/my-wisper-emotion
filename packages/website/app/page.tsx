@@ -13,7 +13,7 @@ import {
   Star,
   ShieldAlert,
 } from 'lucide-react';
-import { DMG_FILENAME, getDownloadUrl } from '@/lib/download';
+import { getDownloadUrl } from '@/lib/download';
 
 export default function LandingPage() {
   const downloadUrl = getDownloadUrl();
@@ -156,7 +156,6 @@ export default function LandingPage() {
           <div className="flex items-center gap-3">
             <a
               href={downloadUrl}
-              download={DMG_FILENAME}
               className="text-xs font-medium px-3.5 py-1.5 rounded-md bg-white text-zinc-950 hover:bg-zinc-200 transition-colors flex items-center gap-2 shadow-sm"
             >
               <Download className="w-3.5 h-3.5 text-zinc-950" />
@@ -289,7 +288,6 @@ export default function LandingPage() {
                     <div className="mt-4 flex items-center gap-3">
                       <a
                         href={downloadUrl}
-                        download={DMG_FILENAME}
                         className="px-4 py-2 rounded-md bg-white text-zinc-950 hover:bg-zinc-200 font-semibold text-xs shadow-sm transition-colors flex items-center gap-2 cursor-pointer"
                       >
                         <Download className="w-4 h-4 text-zinc-950" />
@@ -693,7 +691,6 @@ export default function LandingPage() {
           <div className="flex items-center gap-5 text-xs text-zinc-400">
             <a
               href={downloadUrl}
-              download={DMG_FILENAME}
               className="hover:text-white transition-colors"
             >
               Download DMG
