@@ -1,5 +1,0 @@
-# Exclude the large DMG binary from Vercel uploads.
-# In production, the download button uses NEXT_PUBLIC_DMG_URL (GitHub Releases CDN).
-# The /api/download route falls back to this file only in local dev.
-public/downloads/*.dmg
-public/downloads/*.blockmap
