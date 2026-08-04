@@ -390,9 +390,11 @@ export class AudioPipeline extends EventEmitter {
     }
 
     if (text) {
-      console.log('');
-      console.log(text);
-      if (job.ctx.exe) console.log(`  → ${job.ctx.exe}${job.ctx.isTerminal ? ' (terminal)' : ''}`);
+      if (process.env.VITE_DEV_SERVER_URL !== undefined) {
+        console.log('');
+        console.log(text);
+        if (job.ctx.exe) console.log(`  → ${job.ctx.exe}${job.ctx.isTerminal ? ' (terminal)' : ''}`);
+      }
       this.history.add({
         text,
         rawText,

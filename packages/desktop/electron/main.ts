@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, screen, clipboard, systemPreferences, globalShortcut, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, screen, clipboard, systemPreferences, globalShortcut, shell, Tray, Menu, nativeImage } from 'electron';
 import path from 'path';
 import Module from 'module';
 import https from 'https';
@@ -12,15 +12,15 @@ const nativePath = path.join(process.resourcesPath, 'node_modules');
 const Module_ = Module as any;
 const existingPaths: string[] = Module_._nodeModulePaths?.(__dirname) ?? [];
 if (!existingPaths.includes(nativePath)) {
-  // Inject into require.main.paths so resolution walks here first
-  if (require.main?.paths) require.main.paths.unshift(nativePath);
-  // Also ensure __dirname-relative paths include resourcesPath
-  const _origNodeModPaths = Module_._nodeModulePaths.bind(Module_);
-  Module_._nodeModulePaths = (from: string) => {
-    const paths: string[] = _origNodeModPaths(from);
-    if (!paths.includes(nativePath)) paths.unshift(nativePath);
-    return paths;
-  };
+    // Inject into require.main.paths so resolution walks here first
+    if (require.main?.paths) require.main.paths.unshift(nativePath);
+    // Also ensure __dirname-relative paths include resourcesPath
+    const _origNodeModPaths = Module_._nodeModulePaths.bind(Module_);
+    Module_._nodeModulePaths = (from: string) => {
+        const paths: string[] = _origNodeModPaths(from);
+        if (!paths.includes(nativePath)) paths.unshift(nativePath);
+        return paths;
+    };
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -49,6 +49,7 @@ let mainWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
 let pipeline: AudioPipeline | null = null;
 let fnPoller: ChildProcess | null = null;
+let tray: Tray | null = null;
 
 
 let isFnPressed = false;
@@ -114,7 +115,7 @@ function createMainWindow() {
     if (devUrl) {
         mainWindow.loadURL(devUrl);
     } else {
-        const htmlPath = path.join(app.getAppPath(), 'dist', 'index.html');
+        const htmlPath = path.join(app.getAppPath(), 'packages', 'desktop', 'dist', 'index.html');
         mainWindow.loadFile(htmlPath);
     }
 
@@ -160,13 +161,46 @@ function createOverlayWindow() {
     if (devUrl) {
         overlayWindow.loadURL(`${devUrl}?overlay=1`);
     } else {
-        const htmlPath = path.join(app.getAppPath(), 'dist', 'index.html');
+        const htmlPath = path.join(app.getAppPath(), 'packages', 'desktop', 'dist', 'index.html');
         overlayWindow.loadFile(htmlPath, { query: { overlay: '1' } });
     }
 
     overlayWindow.on('closed', () => {
         overlayWindow = null;
     });
+}
+
+function createTray() {
+    if (tray) return;
+    
+    // A simple 16x16 transparent icon with a small circle, fallback for Windows/Linux
+    const fallbackIcon = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAcElEQVQ4T2NkYGD4z8DAwMgwEIBxQABMDKsgbAA2zYQ0k20AMY3EGkCWAUjuxWYA2QYgu5tUA8g2AL2byDaAbAAYzYTcAKoBQD8TwgD0tBM14xENAEbbF2wA0WSEdCOI9zI0QAADf8wz9o9mZqMAAAAASUVORK5CYII=';
+    const icon = nativeImage.createFromDataURL(fallbackIcon);
+    
+    tray = new Tray(icon);
+    if (process.platform === 'darwin') {
+        tray.setTitle('W'); // Native macOS text tray icon
+    }
+    tray.setToolTip('Wisper Emotion');
+    
+    const contextMenu = Menu.buildFromTemplate([
+        {
+            label: 'Settings',
+            click: () => {
+                if (mainWindow) {
+                    if (mainWindow.isMinimized()) mainWindow.restore();
+                    mainWindow.show();
+                    mainWindow.focus();
+                } else {
+                    createMainWindow();
+                }
+            }
+        },
+        { type: 'separator' },
+        { label: 'Quit', click: () => app.quit() }
+    ]);
+    
+    tray.setContextMenu(contextMenu);
 }
 
 function getFnPollerPath(): string {
@@ -483,9 +517,11 @@ async function stopRecordingAndInject(overrideText?: string) {
     liveInjected = '';
 
     if (text) {
-        console.log(`\n--- Transcript (${wasLong ? 'hands-free' : 'push-to-talk'}) ---`);
-        console.log(text);
-        console.log('------------------\n');
+        if (!app.isPackaged) {
+            console.log(`\n--- Transcript (${wasLong ? 'hands-free' : 'push-to-talk'}) ---`);
+            console.log(text);
+            console.log('------------------\n');
+        }
         // Always copy to clipboard + history so Cmd+V pastes the last transcript
         rememberTranscript(text, 'dictation');
     }
@@ -559,6 +595,7 @@ async function ensureMicrophoneAccess(): Promise<boolean> {
 app.whenReady().then(async () => {
     createMainWindow();
     createOverlayWindow();
+    createTray();
     startClipboardPolling();
 
     // Request mic permission before any recording (macOS blocks silent audio without this)

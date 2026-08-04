@@ -48,21 +48,10 @@ function pickMethod(hints?: InjectTargetHints): InjectMethod {
   return 'paste';
 }
 
-async function pasteViaNativeModule(): Promise<boolean> {
+async function pasteViaNativeHelper(): Promise<boolean> {
   try {
-    const isDev = process.env.VITE_DEV_SERVER_URL !== undefined || !app.isPackaged;
-    const addonPath = isDev 
-      ? path.resolve(process.cwd(), 'electron', 'native-paste', 'build', 'Release', 'native_paste.node')
-      : path.join(process.resourcesPath, 'native-paste', 'build', 'Release', 'native_paste.node');
-      
-    const { createRequire } = require('module');
-    const customRequire = createRequire(typeof __filename !== 'undefined' ? __filename : __dirname);
-    const nativePaste = customRequire(addonPath);
-    
-    if (nativePaste && typeof nativePaste.paste === 'function') {
-      return nativePaste.paste();
-    }
-    return false;
+    await execFileAsync(getPasteHelperPath());
+    return true;
   } catch (e: any) {
     console.warn('Native paste failed:', e?.message || e);
     return false;
@@ -72,7 +61,7 @@ async function pasteViaNativeModule(): Promise<boolean> {
 async function pasteViaAppleScript(): Promise<boolean> {
   try {
     const script = 'tell application "System Events" to keystroke "v" using command down';
-    await execAsync(`osascript -e '${script}'`);
+    await execFileAsync('osascript', ['-e', script]);
     return true;
   } catch (e: any) {
     const isAuthError = e?.stderr?.includes('-1743') || e?.message?.includes('-1743') || e?.message?.includes('1002');
@@ -94,13 +83,23 @@ async function pasteViaAppleScript(): Promise<boolean> {
 async function pasteWindows(method: InjectMethod): Promise<boolean> {
   try {
     if (method === 'shift_insert') {
-      await execAsync(
-        'powershell -command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait(\'+{INSERT}\')"',
-      );
+      await execFileAsync('powershell', [
+        '-NoProfile',
+        '-NonInteractive',
+        '-WindowStyle',
+        'Hidden',
+        '-Command',
+        "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('+{INSERT}')"
+      ]);
     } else {
-      await execAsync(
-        'powershell -command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait(\'^v\')"',
-      );
+      await execFileAsync('powershell', [
+        '-NoProfile',
+        '-NonInteractive',
+        '-WindowStyle',
+        'Hidden',
+        '-Command',
+        "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')"
+      ]);
     }
     return true;
   } catch (e: any) {
@@ -144,7 +143,7 @@ export async function injectTextSystemWide(
       return { success: true, inserted: false, copied: true, cursorFound: false, method: 'clipboard_only' };
     }
 
-    if (await pasteViaNativeModule()) {
+    if (await pasteViaNativeHelper()) {
       return { success: true, inserted: true, copied: true, cursorFound: true, method };
     }
     if (await pasteViaAppleScript()) {
