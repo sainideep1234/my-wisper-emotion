@@ -1,7 +1,6 @@
 {
   "name": "wisper-emotion",
   "version": "1.0.0",
-  "type": "module",
   "private": true,
   "main": "packages/desktop/dist/electron/main.js",
   "scripts": {
@@ -23,14 +22,22 @@
     },
     "files": [
       "packages/desktop/dist/**/*",
-      "packages/desktop/bin/**/*",
       "package.json"
     ],
     "extraResources": [
       {
         "from": "whisper.cpp/build/Release/addon.node",
         "to": "whisper.cpp/build/Release/addon.node"
+      },
+      {
+        "from": "packages/desktop/bin",
+        "to": "bin"
       }
+    ],
+    "asarUnpack": [
+      "**/node_modules/naudiodon/**/*",
+      "**/node_modules/uiohook-napi/**/*",
+      "**/node_modules/onnxruntime-node/**/*"
     ],
     "mac": {
       "target": "dmg",
