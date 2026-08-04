@@ -24,20 +24,35 @@
       "packages/desktop/dist/**/*",
       "package.json"
     ],
+    "asarUnpack": [
+      "**/*.node",
+      "**/*.dylib"
+    ],
     "extraResources": [
       {
         "from": "whisper.cpp/build/Release/addon.node",
         "to": "whisper.cpp/build/Release/addon.node"
       },
       {
-        "from": "packages/desktop/bin",
-        "to": "bin"
+        "from": "packages/desktop/node_modules/uiohook-napi",
+        "to": "node_modules/uiohook-napi"
+      },
+      {
+        "from": "packages/desktop/node_modules/node-gyp-build",
+        "to": "node_modules/node-gyp-build"
+      },
+      {
+        "from": "packages/desktop/node_modules/naudiodon",
+        "to": "node_modules/naudiodon"
+      },
+      {
+        "from": "packages/desktop/bin/fn-poll",
+        "to": "bin/fn-poll"
+      },
+      {
+        "from": "packages/desktop/bin/paste-helper",
+        "to": "bin/paste-helper"
       }
-    ],
-    "asarUnpack": [
-      "**/node_modules/naudiodon/**/*",
-      "**/node_modules/uiohook-napi/**/*",
-      "**/node_modules/onnxruntime-node/**/*"
     ],
     "mac": {
       "target": "dmg",

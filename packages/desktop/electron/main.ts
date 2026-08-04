@@ -1,8 +1,33 @@
 import { app, BrowserWindow, ipcMain, screen, clipboard, systemPreferences, globalShortcut, shell } from 'electron';
 import path from 'path';
+import Module from 'module';
 import https from 'https';
 import { spawn, type ChildProcess } from 'child_process';
-import { uIOhook, UiohookKey } from 'uiohook-napi';
+import type { UiohookNapi } from 'uiohook-napi';
+
+// ─── Native Module Path Injection (MUST run before any native require) ────────
+// extraResources places uiohook-napi/naudiodon at Resources/node_modules/.
+// We prepend that path to Node's module resolution so require() finds them.
+const nativePath = path.join(process.resourcesPath, 'node_modules');
+const Module_ = Module as any;
+const existingPaths: string[] = Module_._nodeModulePaths?.(__dirname) ?? [];
+if (!existingPaths.includes(nativePath)) {
+  // Inject into require.main.paths so resolution walks here first
+  if (require.main?.paths) require.main.paths.unshift(nativePath);
+  // Also ensure __dirname-relative paths include resourcesPath
+  const _origNodeModPaths = Module_._nodeModulePaths.bind(Module_);
+  Module_._nodeModulePaths = (from: string) => {
+    const paths: string[] = _origNodeModPaths(from);
+    if (!paths.includes(nativePath)) paths.unshift(nativePath);
+    return paths;
+  };
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Load uiohook-napi AFTER path injection (require is preserved by esbuild for --external modules)
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { uIOhook, UiohookKey } = require('uiohook-napi') as typeof import('uiohook-napi');
+
 import { AudioPipeline, AVAILABLE_MODELS } from '../../engine/pipeline.ts';
 import { downloadModelById, isModelDownloaded } from './download-model.js';
 import { getBackendPath, DEFAULT_MODEL_ID } from './paths.js';
