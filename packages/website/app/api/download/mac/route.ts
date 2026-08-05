@@ -7,7 +7,7 @@ export async function GET() {
     const res = await fetch(
       'https://api.github.com/repos/sainideep1234/my-wisper-emotion/releases/latest',
       {
-        next: { revalidate: 3600 },
+        next: { revalidate: 0 },
         headers: {
           Accept: 'application/vnd.github.v3+json',
         },
