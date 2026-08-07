@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import {
   Download,
@@ -12,11 +12,33 @@ import {
   Info,
   Star,
   ShieldAlert,
+  Terminal,
+  Check,
+  Copy,
+  ArrowDown,
 } from 'lucide-react';
 import { getDownloadUrl } from '@/lib/download';
 
 export default function LandingPage() {
   const downloadUrl = getDownloadUrl();
+
+  // "Copied" toast — shared by every copy-to-clipboard button on the page
+  const [copiedToast, setCopiedToast] = useState<string | null>(null);
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyToClipboard = (text: string, toastLabel: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedToast(toastLabel);
+    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    copyTimeoutRef.current = setTimeout(() => setCopiedToast(null), 2000);
+  };
+
+  // Absolute origin for the curl command (curl needs a full URL, not a relative path)
+  const [origin, setOrigin] = useState('');
+  useEffect(() => {
+    setOrigin(window.location.origin);
+  }, []);
+  const xattrCommand = 'xattr -cr "/Applications/Wisper.app"';
+  const curlCommand = `curl -L -o ~/Downloads/Wisper.dmg "${origin || 'https://wisper.app'}/api/download/mac"`;
   const [activeFeatureTab, setActiveFeatureTab] = useState<'dictation' | 'emotion' | 'clipboard'>(
     'dictation',
   );
@@ -96,7 +118,7 @@ export default function LandingPage() {
     },
     {
       q: 'What if macOS says "Wisper Emotion is damaged and can\'t be opened" or "Apple cannot verify this app"?',
-      a: 'This standard macOS Gatekeeper security notice occurs for indie app builds downloaded from browsers. Because the app is not signed with an Apple Developer ID, macOS applies a quarantine flag. You can remove the quarantine and launch the app in 10 seconds:',
+      a: 'This standard macOS Gatekeeper security notice occurs for indie app builds downloaded from browsers, which quarantine anything they download. Because the app is not signed with an Apple Developer ID, macOS blocks quarantined copies. See the "Browser Download" vs "Terminal Install" options in the Installation section above — the Terminal (curl) install skips this entirely since curl never sets the quarantine flag. For the browser DMG, clear it in 10 seconds:',
       steps: [
         'Drag Wisper Emotion to your Applications folder.',
         'Open Terminal.app (press ⌘Space and type "Terminal").',
@@ -401,41 +423,115 @@ export default function LandingPage() {
       </section>
 
       {/* ── GATEKEEPER INSTRUCTIONS SECTION ── */}
-      <section id="installation" className="max-w-3xl mx-auto px-4 py-8 w-full border-b border-[#1c1c21]">
-        <div className="rounded-xl bg-[#121215] border border-[#27272a] p-5 text-xs leading-relaxed flex flex-col gap-3.5">
-          <div className="flex items-start gap-3.5">
-            <ShieldAlert className="w-4 h-4 text-zinc-400 shrink-0 mt-0.5" />
-            <div className="w-full">
-              <h4 className="font-semibold text-white text-xs mb-1">
-                macOS Gatekeeper &amp; "Damaged App" Resolution
-              </h4>
-              <p className="text-zinc-400 mb-3">
-                Since this is a custom local build outside the Mac App Store, macOS will quarantine the download and say the app <span className="text-zinc-200">"is damaged and can't be opened"</span>. You can clear this restriction and run it in 10 seconds:
-              </p>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs mb-4">
-                <div className="p-3 rounded-lg bg-[#09090b] border border-[#27272a] flex flex-col gap-1">
-                  <span className="w-5 h-5 rounded bg-[#18181b] border border-[#27272a] text-[10px] font-mono text-zinc-300 font-semibold flex items-center justify-center shrink-0">1</span>
-                  <span className="text-zinc-300">Drag <strong>Wisper Emotion.app</strong> to your <strong>Applications</strong> folder</span>
-                </div>
-                <div className="p-3 rounded-lg bg-[#09090b] border border-[#27272a] flex flex-col gap-1">
-                  <span className="w-5 h-5 rounded bg-[#18181b] border border-[#27272a] text-[10px] font-mono text-zinc-300 font-semibold flex items-center justify-center shrink-0">2</span>
-                  <span className="text-zinc-300">Open <strong>Terminal.app</strong> and run the command below</span>
-                </div>
-                <div className="p-3 rounded-lg bg-[#09090b] border border-[#27272a] flex flex-col gap-1">
-                  <span className="w-5 h-5 rounded bg-[#18181b] border border-[#27272a] text-[10px] font-mono text-zinc-300 font-semibold flex items-center justify-center shrink-0">3</span>
-                  <span className="text-zinc-300">Launch Wisper Emotion normally from Applications</span>
-                </div>
-              </div>
+      <section id="installation" className="max-w-4xl mx-auto px-4 py-8 w-full border-b border-[#1c1c21]">
+        <div className="flex items-start gap-3.5 mb-5">
+          <ShieldAlert className="w-4 h-4 text-zinc-400 shrink-0 mt-0.5" />
+          <div>
+            <h4 className="font-semibold text-white text-sm mb-1">
+              macOS Gatekeeper &amp; "Damaged App" Resolution
+            </h4>
+            <p className="text-zinc-400 text-xs leading-relaxed max-w-2xl">
+              Since this is a custom local build outside the Mac App Store, macOS quarantines anything a browser
+              downloads and says the app <span className="text-zinc-200">"is damaged and can't be opened."</span>{' '}
+              Pick whichever install path you prefer — both end with the same working app.
+            </p>
+          </div>
+        </div>
 
-              <div className="bg-[#09090b] border border-zinc-800 rounded-lg p-3 font-mono text-[11px] text-zinc-300 flex items-center justify-between gap-3 select-all">
-                <span className="overflow-x-auto whitespace-nowrap scrollbar-thin">xattr -cr "/Applications/Wisper.app"</span>
-                <span className="text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 py-0.5 rounded cursor-pointer transition-colors" onClick={() => navigator.clipboard.writeText('xattr -cr "/Applications/Wisper.app"')}>Copy</span>
-              </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
+          {/* ── OPTION A: Browser DMG → requires the xattr command ── */}
+          <div className="rounded-xl bg-[#121215] border border-amber-900/40 p-5 text-xs leading-relaxed flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-md bg-[#18181b] border border-[#27272a] flex items-center justify-center shrink-0">
+                <Download className="w-3.5 h-3.5 text-zinc-300" />
+              </span>
+              <span className="text-sm font-medium text-white">Browser Download</span>
+              <span className="ml-auto text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                needs 1 command
+              </span>
             </div>
+
+            <a
+              href={downloadUrl}
+              className="px-4 py-2.5 rounded-md bg-white text-zinc-950 hover:bg-zinc-200 font-semibold text-xs shadow-sm transition-colors flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Download className="w-4 h-4 text-zinc-950" />
+              <span>Download for macOS (DMG)</span>
+            </a>
+
+            <p className="text-zinc-400">
+              Drag <strong className="text-zinc-200">Wisper Emotion.app</strong> into <strong className="text-zinc-200">Applications</strong>, then run this in Terminal —
+              it clears the quarantine flag the browser attached to the download:
+            </p>
+
+            {/* Connector: visually ties the download step to the command below it */}
+            <div className="flex items-center gap-2 pl-1 text-[10px] font-medium text-amber-400/80 uppercase tracking-wide">
+              <ArrowDown className="w-3 h-3" />
+              <span>then run this</span>
+            </div>
+
+            <div className="bg-[#09090b] border border-amber-900/50 rounded-lg p-3 font-mono text-[11px] text-zinc-300 flex items-center justify-between gap-3 select-all">
+              <span className="overflow-x-auto whitespace-nowrap scrollbar-thin">{xattrCommand}</span>
+              <button
+                type="button"
+                onClick={() => copyToClipboard(xattrCommand, 'xattr command copied')}
+                className="shrink-0 flex items-center gap-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 py-1 rounded cursor-pointer transition-colors"
+              >
+                <Copy className="w-3 h-3" />
+                Copy
+              </button>
+            </div>
+          </div>
+
+          {/* ── OPTION B: curl install → no command needed afterward ── */}
+          <div className="rounded-xl bg-[#121215] border border-emerald-900/40 p-5 text-xs leading-relaxed flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-md bg-[#18181b] border border-[#27272a] flex items-center justify-center shrink-0">
+                <Terminal className="w-3.5 h-3.5 text-zinc-300" />
+              </span>
+              <span className="text-sm font-medium text-white">Terminal Install</span>
+              <span className="ml-auto text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                <Check className="w-2.5 h-2.5" />
+                no command needed after
+              </span>
+            </div>
+
+            <p className="text-zinc-400">
+              Paste this into Terminal. <span className="text-zinc-200">curl</span> doesn't set the browser's quarantine
+              flag, so macOS never blocks the app — nothing to clear afterward.
+            </p>
+
+            <div className="bg-[#09090b] border border-emerald-900/50 rounded-lg p-3 font-mono text-[11px] text-zinc-300 flex items-center justify-between gap-3 select-all mt-auto">
+              <span className="overflow-x-auto whitespace-nowrap scrollbar-thin">{curlCommand}</span>
+              <button
+                type="button"
+                onClick={() => copyToClipboard(curlCommand, 'curl command copied')}
+                className="shrink-0 flex items-center gap-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 py-1 rounded cursor-pointer transition-colors"
+              >
+                <Copy className="w-3 h-3" />
+                Copy
+              </button>
+            </div>
+
+            <p className="text-zinc-500 text-[11px]">
+              Then open the downloaded DMG and drag Wisper Emotion into Applications — that's it, no Terminal command afterward.
+            </p>
           </div>
         </div>
       </section>
+
+      {/* Shared "Copied" toast for every copy-to-clipboard button on the page */}
+      {copiedToast && (
+        <div
+          className="fixed bottom-6 left-1/2 z-[100] flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#18181b] border border-[#27272a] shadow-lg shadow-black/40 text-xs font-medium text-zinc-100"
+          style={{ animation: 'wispr-toast-in 0.2s ease-out' }}
+        >
+          <span className="w-4 h-4 rounded-full bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center shrink-0">
+            <Check className="w-2.5 h-2.5 text-emerald-400" />
+          </span>
+          <span>{copiedToast}</span>
+        </div>
+      )}
 
       {/* ── FEATURE SHOWCASE SECTION ── */}
       <section id="features" className="py-16 border-b border-[#1c1c21]">

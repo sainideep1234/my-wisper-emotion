@@ -21,6 +21,11 @@
   50% { height: 18px; }
 }
 
+@keyframes wispr-toast-in {
+  0% { opacity: 0; transform: translate(-50%, 6px) scale(0.96); }
+  100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
 .desktop-floating-pill {
   background: rgba(10, 12, 16, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.08);
