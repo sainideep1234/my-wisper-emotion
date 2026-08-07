@@ -41,6 +41,14 @@ rebuild_naudiodon() {
   mkdir -p "$NAUDIODON/portaudio/bin"
   cp "$BREW_PA" "$NAUDIODON/portaudio/bin/libportaudio.dylib"
   rebuild_native "$NAUDIODON" "$@"
+
+  # Fix linkage so the app works on Macs without Homebrew PortAudio installed
+  local NODE_FILE="$NAUDIODON/build/Release/naudiodon.node"
+  local BREW_PA_REAL="/opt/homebrew/opt/portaudio/lib/libportaudio.2.dylib"
+  if [[ -f "$NODE_FILE" ]] && [[ -f "$BREW_PA_REAL" ]]; then
+    cp "$BREW_PA_REAL" "$NAUDIODON/build/Release/"
+    install_name_tool -change "$BREW_PA_REAL" "@loader_path/libportaudio.2.dylib" "$NODE_FILE"
+  fi
 }
 
 # Root install: Node ABI (CLI / bun start / test:dictation)
