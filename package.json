@@ -9,10 +9,10 @@
     "build:paste-helper": "mkdir -p bin packages/desktop/bin && clang -O2 -framework ApplicationServices packages/desktop/electron/native/paste.c -o bin/paste-helper && cp bin/paste-helper packages/desktop/bin/paste-helper",
     "build:fn-poll": "mkdir -p bin packages/desktop/bin && clang -O2 -framework ApplicationServices packages/desktop/electron/native/fn-poll.c -o bin/fn-poll && cp bin/fn-poll packages/desktop/bin/fn-poll",
     "rebuild:electron": "bunx @electron/rebuild -f && cd packages/desktop && bunx @electron/rebuild -f",
-    "setup": "bun install && bun run build:whisper-addon && bun run build:paste-helper && bun run build:fn-poll && cd packages/desktop && bun install && cd .. && bun run rebuild:electron",
+    "setup": "bun install && bun run build:whisper-addon && bun run build:paste-helper && bun run build:fn-poll && cd packages/desktop && bun install && cd .. && bash scripts/fix-naudiodon-portaudio.sh && bun run rebuild:electron",
     "dev": "cd packages/desktop && bun run dev",
     "build:desktop": "cd packages/desktop && bun run build",
-    "release:mac": "rm -rf release && bun run build:desktop && bunx electron-builder --mac --publish never",
+    "release:mac": "rm -rf release && bun run build:desktop && STRICT=1 bash scripts/fix-naudiodon-portaudio.sh && bunx electron-builder --mac --publish never && bash scripts/verify-native-modules.sh",
     "publish:release": "bash scripts/publish-release.sh"
   },
   "build": {
@@ -46,6 +46,18 @@
       {
         "from": "packages/desktop/node_modules/naudiodon",
         "to": "node_modules/naudiodon"
+      },
+      {
+        "from": "packages/desktop/node_modules/segfault-handler",
+        "to": "node_modules/segfault-handler"
+      },
+      {
+        "from": "packages/desktop/node_modules/bindings",
+        "to": "node_modules/bindings"
+      },
+      {
+        "from": "packages/desktop/node_modules/file-uri-to-path",
+        "to": "node_modules/file-uri-to-path"
       },
       {
         "from": "packages/desktop/bin/fn-poll",

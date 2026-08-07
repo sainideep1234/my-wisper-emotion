@@ -1,17 +1,33 @@
 #!/usr/bin/env bash
 # Ensure naudiodon links against an arm64 PortAudio on Apple Silicon.
 # Optional: ELECTRON_VERSION=43.2.0 rebuilds packages/engine/node_modules for Electron ABI.
+#
+# STRICT=1 turns every "skip silently" case below into a hard failure. Use this
+# for release builds (see release:mac) — a packaged app that silently skipped
+# an ABI rebuild ships a native module that crashes on every user's Mac with
+# "was compiled against a different Node.js version" (NODE_MODULE_VERSION mismatch).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BREW_PA="/opt/homebrew/lib/libportaudio.dylib"
+STRICT="${STRICT:-0}"
+
+fail_or_skip() {
+  local msg="$1"
+  if [[ "$STRICT" == "1" ]]; then
+    echo "error: $msg" >&2
+    exit 1
+  else
+    echo "note: $msg" >&2
+  fi
+}
 
 if [[ "$(uname -s)" != "Darwin" ]] || [[ "$(uname -m)" != "arm64" ]]; then
   exit 0
 fi
 
 if [[ ! -f "$BREW_PA" ]]; then
-  echo "note: install PortAudio for mic capture: brew install portaudio"
+  fail_or_skip "PortAudio not found — install it with: brew install portaudio"
   exit 0
 fi
 
@@ -62,11 +78,25 @@ if [[ -z "$EV" && -f "$ROOT/packages/desktop/node_modules/electron/package.json"
   EV="$(node -p "require('$ROOT/packages/desktop/node_modules/electron/package.json').version")"
 fi
 
+if [[ -z "$EV" ]]; then
+  fail_or_skip "could not resolve an Electron version (run 'cd packages/desktop && bun install' first, or set ELECTRON_VERSION) — skipping Electron-ABI rebuilds"
+fi
+
 ELECTRON_GYP=(--target="$EV" --arch=arm64 --dist-url=https://electronjs.org/headers)
 
+# $2 = "required" -> missing dir/EV escalates per STRICT; anything else -> always just a note.
 rebuild_for_electron() {
   local DIR="$1"
-  if [[ -z "$EV" || ! -d "$DIR" ]]; then
+  local REQUIRED="${2:-optional}"
+  if [[ -z "$EV" ]]; then
+    return 0
+  fi
+  if [[ ! -d "$DIR" ]]; then
+    if [[ "$REQUIRED" == "required" ]]; then
+      fail_or_skip "$DIR does not exist — its native module won't be rebuilt for Electron's ABI"
+    else
+      echo "note: $DIR does not exist — skipping (not part of the packaged app)" >&2
+    fi
     return 0
   fi
   if [[ "$(basename "$DIR")" == "naudiodon" ]]; then
@@ -76,8 +106,25 @@ rebuild_for_electron() {
   fi
 }
 
-# Electron needs segfault-handler + naudiodon rebuilt for its ABI (not Node's)
-rebuild_for_electron "$ROOT/packages/desktop/node_modules/segfault-handler"
-rebuild_for_electron "$ROOT/packages/desktop/node_modules/naudiodon"
+# packages/desktop's copies are what electron-builder's extraResources actually
+# ships inside the app — these must exist and match Electron's ABI (STRICT-enforced).
+rebuild_for_electron "$ROOT/packages/desktop/node_modules/segfault-handler" required
+rebuild_for_electron "$ROOT/packages/desktop/node_modules/naudiodon" required
+
+# packages/engine's copies (if present) are only used by its standalone CLI test
+# harness, run under plain Node, not packaged — never worth failing a release over.
 rebuild_for_electron "$ROOT/packages/engine/node_modules/segfault-handler"
 rebuild_for_electron "$ROOT/packages/engine/node_modules/naudiodon"
+
+if [[ "$STRICT" == "1" && -n "$EV" ]]; then
+  for f in \
+    "$ROOT/packages/desktop/node_modules/segfault-handler/build/Release/segfault-handler.node" \
+    "$ROOT/packages/desktop/node_modules/naudiodon/build/Release/naudiodon.node"
+  do
+    if [[ ! -f "$f" ]]; then
+      echo "error: expected Electron-ABI build output missing: $f" >&2
+      exit 1
+    fi
+  done
+  echo "verified: packages/desktop native modules are built for Electron $EV"
+fi
