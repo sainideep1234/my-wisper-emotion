@@ -136,6 +136,13 @@ export const App: React.FC = () => {
   const [microphoneGranted, setMicrophoneGranted] = useState(true);
   const [updateInfo, setUpdateInfo] = useState<{ version: string; downloadUrl: string; notes: string } | null>(null);
   const [fnKeyAccessible, setFnKeyAccessible] = useState(true);
+  const [showFnKeySetup, setShowFnKeySetup] = useState(() => {
+    try {
+      return localStorage.getItem('wisper_fn_key_setup_dismissed') !== '1';
+    } catch {
+      return true;
+    }
+  });
 
   // Smooth audio level for overlay wave animation (Whisper Flow style)
   useEffect(() => {
@@ -212,6 +219,19 @@ export const App: React.FC = () => {
     if (window.electronAPI) {
       const ok = await window.electronAPI.requestMicrophone();
       setMicrophoneGranted(ok);
+    }
+  };
+
+  const handleOpenKeyboardSettings = () => {
+    window.electronAPI?.openExternalLink?.('x-apple.systempreferences:com.apple.preference.keyboard');
+  };
+
+  const dismissFnKeySetup = () => {
+    setShowFnKeySetup(false);
+    try {
+      localStorage.setItem('wisper_fn_key_setup_dismissed', '1');
+    } catch {
+      // localStorage unavailable — dismissal just won't persist across launches
     }
   };
 
@@ -1071,6 +1091,32 @@ export const App: React.FC = () => {
             <div>
               <button className="select-btn active" onClick={handleRequestAccessibility}>
                 Grant Permission
+              </button>
+            </div>
+          </div>
+        )}
+
+        {showFnKeySetup && (
+          <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-3.5" style={{ marginBottom: 16, borderColor: '#F59E0B44', backgroundColor: '#241C0E' }}>
+            <div className="flex items-center justify-between gap-2">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <IconShield size={16} color="#F59E0B" />
+                <span className="card-title" style={{ color: '#F59E0B' }}>
+                  One-time setup: stop macOS from also opening on <code className="kbd">fn</code>
+                </span>
+              </div>
+            </div>
+            <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, lineHeight: 1.5 }}>
+              Wisper watches the <code className="kbd">fn</code> key, but can't stop macOS's own emoji picker / dictation
+              from also opening on the same press — that's a macOS limitation, not a bug. Set{' '}
+              <strong>Keyboard → Press 🌐 fn key to → Do Nothing</strong>, then Wisper will be the only thing that reacts.
+            </p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="select-btn active" onClick={handleOpenKeyboardSettings}>
+                Open Keyboard Settings
+              </button>
+              <button className="px-3 py-1.5 rounded-md bg-[#0A0A0A] border border-neutral-800 text-neutral-200 text-[11px] font-medium cursor-pointer transition-all duration-150 inline-flex items-center gap-1.5 whitespace-nowrap hover:bg-white/5" onClick={dismissFnKeySetup}>
+                I've done this
               </button>
             </div>
           </div>
