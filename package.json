@@ -12,7 +12,7 @@
     "setup": "bun install && bun run build:whisper-addon && bun run build:paste-helper && bun run build:fn-poll && cd packages/desktop && bun install && cd .. && bash scripts/fix-naudiodon-portaudio.sh && bun run rebuild:electron",
     "dev": "cd packages/desktop && bun run dev",
     "build:desktop": "cd packages/desktop && bun run build",
-    "release:mac": "rm -rf release && bun run build:desktop && STRICT=1 bash scripts/fix-naudiodon-portaudio.sh && bunx electron-builder --mac --publish never && bash scripts/verify-native-modules.sh",
+    "release:mac": "rm -rf release && bun run build:desktop && STRICT=1 bash scripts/fix-naudiodon-portaudio.sh && bash scripts/stage-whisper-runtime.sh && bunx electron-builder --mac --publish never && bash scripts/verify-native-modules.sh",
     "publish:release": "bash scripts/publish-release.sh"
   },
   "build": {
@@ -24,7 +24,11 @@
     },
     "files": [
       "packages/desktop/dist/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules/naudiodon/**/*",
+      "!node_modules/segfault-handler/**/*",
+      "!node_modules/bindings/**/*",
+      "!node_modules/file-uri-to-path/**/*"
     ],
     "asarUnpack": [
       "**/*.node",
@@ -32,8 +36,8 @@
     ],
     "extraResources": [
       {
-        "from": "whisper.cpp/build/Release/addon.node",
-        "to": "whisper.cpp/build/Release/addon.node"
+        "from": "build/whisper-runtime",
+        "to": "whisper.cpp/build/Release"
       },
       {
         "from": "packages/desktop/node_modules/uiohook-napi",

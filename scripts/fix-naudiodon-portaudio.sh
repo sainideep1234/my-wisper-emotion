@@ -65,6 +65,11 @@ rebuild_naudiodon() {
     cp "$BREW_PA_REAL" "$NAUDIODON/build/Release/"
     chmod 755 "$NAUDIODON/build/Release/libportaudio.2.dylib" # Ensure write permissions so xattr -cr doesn't fail
     install_name_tool -change "$BREW_PA_REAL" "@loader_path/libportaudio.2.dylib" "$NODE_FILE"
+    # The copy still advertises Homebrew's absolute path as its own install
+    # name; rewrite it so nothing in the bundle names a path off this machine.
+    install_name_tool -id "@loader_path/libportaudio.2.dylib" "$NAUDIODON/build/Release/libportaudio.2.dylib" 2>/dev/null || true
+    codesign --force --sign - "$NAUDIODON/build/Release/libportaudio.2.dylib" >/dev/null 2>&1 || true
+    codesign --force --sign - "$NODE_FILE" >/dev/null 2>&1 || true
   fi
 }
 
