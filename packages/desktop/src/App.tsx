@@ -136,13 +136,13 @@ export const App: React.FC = () => {
   const [microphoneGranted, setMicrophoneGranted] = useState(true);
   const [updateInfo, setUpdateInfo] = useState<{ version: string; downloadUrl: string; notes: string } | null>(null);
   const [fnKeyAccessible, setFnKeyAccessible] = useState(true);
-  const [showFnKeySetup, setShowFnKeySetup] = useState(() => {
-    try {
-      return localStorage.getItem('wisper_fn_key_setup_dismissed') !== '1';
-    } catch {
-      return true;
-    }
-  });
+
+  // Fn key native-action gate: blocks the dashboard until macOS's "Press fn key
+  // to" preference is verifiably set to "Do Nothing" (AppleFnUsageType === 0),
+  // so Wisper is the only thing that reacts to fn. Checked via a real read of
+  // the system preference, not a self-reported checkbox.
+  const [fnKeyGate, setFnKeyGate] = useState<'checking' | 'needed' | 'done'>('checking');
+  const [fnKeyValue, setFnKeyValue] = useState<number | null>(null);
 
   // Smooth audio level for overlay wave animation (Whisper Flow style)
   useEffect(() => {
@@ -226,14 +226,26 @@ export const App: React.FC = () => {
     window.electronAPI?.openExternalLink?.('x-apple.systempreferences:com.apple.preference.keyboard');
   };
 
-  const dismissFnKeySetup = () => {
-    setShowFnKeySetup(false);
-    try {
-      localStorage.setItem('wisper_fn_key_setup_dismissed', '1');
-    } catch {
-      // localStorage unavailable — dismissal just won't persist across launches
+  useEffect(() => {
+    if (!window.electronAPI?.checkFnKeySetting) {
+      setFnKeyGate('done');
+      return;
     }
-  };
+    let cancelled = false;
+    const check = () => {
+      window.electronAPI.checkFnKeySetting().then(({ configured, value }) => {
+        if (cancelled) return;
+        setFnKeyValue(value);
+        setFnKeyGate(configured ? 'done' : 'needed');
+      });
+    };
+    check();
+    const interval = setInterval(check, 1500);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     if (!window.electronAPI) return;
@@ -629,7 +641,123 @@ export const App: React.FC = () => {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 2. FIRST-LAUNCH SETUP GATE
+  // 2. FN KEY NATIVE-ACTION GATE
+  // Blocks the dashboard until macOS's own "Press fn key to" preference is
+  // verifiably set to "Do Nothing" — otherwise the system emoji picker /
+  // dictation fires alongside Wisper on every fn press. Detected by reading
+  // AppleFnUsageType directly (see check_fn_key_setting in main.ts), not a
+  // self-reported checkbox — this re-checks every 1.5s and unlocks itself.
+  // ───────────────────────────────────────────────────────────────────────────
+  if (fnKeyGate === 'checking') {
+    return (
+      <div className="flex items-center justify-center h-screen w-screen bg-black" />
+    );
+  }
+
+  if (fnKeyGate === 'needed') {
+    const valueLabel =
+      fnKeyValue === 1 ? 'Switch Input Source'
+      : fnKeyValue === 2 ? 'Character Viewer (Emoji & Symbols)'
+      : fnKeyValue === 3 ? 'Start Dictation'
+      : fnKeyValue === null ? 'not yet set'
+      : 'something other than Do Nothing';
+
+    const steps = [
+      'Click "Open Keyboard Settings" below',
+      'Find "Press 🌐 fn key to" near the top of the panel',
+      'Set it to "Do Nothing"',
+    ];
+
+    return (
+      <div style={{
+        height: '100vh', width: '100vw', background: '#090B0E',
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        justifyContent: 'center', fontFamily: 'system-ui, -apple-system, sans-serif',
+        WebkitAppRegion: 'drag',
+      } as any}>
+        <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <IconLogo size={36} />
+          <span style={{ fontSize: 18, fontWeight: 700, color: '#F1F5F9', letterSpacing: '-0.3px' }}>
+            Wisper Emotion
+          </span>
+        </div>
+
+        <div style={{
+          width: 460, background: '#121520', border: '1px solid #22283A',
+          borderRadius: 14, padding: '32px', WebkitAppRegion: 'no-drag',
+        } as any}>
+
+          <div style={{ marginBottom: 22, textAlign: 'center' }}>
+            <div style={{
+              width: 52, height: 52, borderRadius: 14,
+              background: '#241C0E', border: '1px solid #F59E0B',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 16px',
+            }}>
+              <IconGear size={24} color="#F59E0B" style={{ animation: 'spin 4s linear infinite' }} />
+            </div>
+            <h2 className="text-[17px] font-bold text-neutral-100 mb-1.5">
+              Free Up the <code className="kbd">fn</code> Key
+            </h2>
+            <p style={{ fontSize: 13, color: '#94A3B8', lineHeight: 1.55 }}>
+              macOS is currently set to <strong style={{ color: '#F1F5F9' }}>{valueLabel}</strong> when{' '}
+              <code className="kbd">fn</code> is pressed, so it would fire alongside Wisper on every press.
+              Set it to <strong style={{ color: '#F1F5F9' }}>Do Nothing</strong> so Wisper is the only thing that responds.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+            {steps.map((step, i) => (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '9px 12px', borderRadius: 9,
+                background: '#0D1017', border: '1px solid #1E2536',
+              }}>
+                <span style={{
+                  width: 20, height: 20, borderRadius: 6, flexShrink: 0,
+                  background: '#1A2130', border: '1px solid #2B374E',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 10, fontWeight: 700, color: '#94A3B8', fontFamily: 'monospace',
+                }}>
+                  {i + 1}
+                </span>
+                <span style={{ fontSize: 12.5, color: '#CBD5E1' }}>{step}</span>
+              </div>
+            ))}
+          </div>
+
+          <button
+            onClick={handleOpenKeyboardSettings}
+            style={{
+              width: '100%', padding: '10px 0', borderRadius: 8,
+              background: '#0EA5E9', color: '#FFF', border: 'none',
+              fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              marginBottom: 14,
+            }}
+          >
+            <IconGear size={14} />
+            Open Keyboard Settings
+          </button>
+
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+            fontSize: 11, color: '#64748B',
+          }}>
+            <IconSpinner size={11} color="#64748B" style={{ animation: 'spin 1s linear infinite' }} />
+            <span>Watching for the change — this screen unlocks automatically</span>
+          </div>
+        </div>
+
+        <p style={{ fontSize: 11, color: '#475569', marginTop: 16, maxWidth: 420, textAlign: 'center', lineHeight: 1.5 }}>
+          If <code className="kbd">fn</code> still opens the emoji picker right after changing this, restart your Mac to finish applying it.
+        </p>
+      </div>
+    );
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 3. FIRST-LAUNCH SETUP GATE
   // ───────────────────────────────────────────────────────────────────────────
   if (firstLaunchGate === 'checking') {
     return (
@@ -730,7 +858,7 @@ export const App: React.FC = () => {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 3. MAIN APPLICATION CONSOLE
+  // 4. MAIN APPLICATION CONSOLE
   // ───────────────────────────────────────────────────────────────────────────
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100vw', background: '#090A0D', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
@@ -1091,32 +1219,6 @@ export const App: React.FC = () => {
             <div>
               <button className="select-btn active" onClick={handleRequestAccessibility}>
                 Grant Permission
-              </button>
-            </div>
-          </div>
-        )}
-
-        {showFnKeySetup && (
-          <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-3.5" style={{ marginBottom: 16, borderColor: '#F59E0B44', backgroundColor: '#241C0E' }}>
-            <div className="flex items-center justify-between gap-2">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <IconShield size={16} color="#F59E0B" />
-                <span className="card-title" style={{ color: '#F59E0B' }}>
-                  One-time setup: stop macOS from also opening on <code className="kbd">fn</code>
-                </span>
-              </div>
-            </div>
-            <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, lineHeight: 1.5 }}>
-              Wisper watches the <code className="kbd">fn</code> key, but can't stop macOS's own emoji picker / dictation
-              from also opening on the same press — that's a macOS limitation, not a bug. Set{' '}
-              <strong>Keyboard → Press 🌐 fn key to → Do Nothing</strong>, then Wisper will be the only thing that reacts.
-            </p>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="select-btn active" onClick={handleOpenKeyboardSettings}>
-                Open Keyboard Settings
-              </button>
-              <button className="px-3 py-1.5 rounded-md bg-[#0A0A0A] border border-neutral-800 text-neutral-200 text-[11px] font-medium cursor-pointer transition-all duration-150 inline-flex items-center gap-1.5 whitespace-nowrap hover:bg-white/5" onClick={dismissFnKeySetup}>
-                I've done this
               </button>
             </div>
           </div>

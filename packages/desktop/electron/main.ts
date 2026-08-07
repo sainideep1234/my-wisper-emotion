@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, screen, clipboard, systemPreferences, glob
 import path from 'path';
 import Module from 'module';
 import https from 'https';
-import { spawn, type ChildProcess } from 'child_process';
+import { spawn, execFile, type ChildProcess } from 'child_process';
 
 
 // ─── Native Module Path Injection (MUST run before any native require) ────────
@@ -837,6 +837,28 @@ ipcMain.handle('request_accessibility', () => {
     } catch (e) {
         return true;
     }
+});
+
+// AppleFnUsageType controls what macOS itself does when fn is pressed:
+// 0 = Do Nothing, 1 = switch input source, 2 = Character Viewer (emoji picker),
+// 3 = double-tap dictation. Wisper needs this at 0 so it's the only thing that
+// reacts to fn — otherwise the system emoji picker/dictation fires alongside it.
+ipcMain.handle('check_fn_key_setting', () => {
+    return new Promise<{ configured: boolean; value: number | null }>((resolve) => {
+        if (process.platform !== 'darwin') {
+            resolve({ configured: true, value: 0 });
+            return;
+        }
+        execFile('defaults', ['read', 'com.apple.HIToolbox', 'AppleFnUsageType'], (err, stdout) => {
+            if (err) {
+                // Key not set yet — macOS's out-of-box default opens the emoji picker.
+                resolve({ configured: false, value: null });
+                return;
+            }
+            const value = parseInt(stdout.trim(), 10);
+            resolve({ configured: value === 0, value: Number.isNaN(value) ? null : value });
+        });
+    });
 });
 
 ipcMain.handle('open_external_link', (_event, url: string) => {

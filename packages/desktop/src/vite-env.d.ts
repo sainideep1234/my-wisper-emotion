@@ -11,6 +11,7 @@ export interface ElectronAPI {
     retrySetup: () => Promise<{ triggered: boolean }>;
     checkAccessibility: () => Promise<boolean>;
     requestAccessibility: () => Promise<boolean>;
+    checkFnKeySetting: () => Promise<{ configured: boolean; value: number | null }>;
     checkMicrophone: () => Promise<boolean>;
     requestMicrophone: () => Promise<boolean>;
     onAudioLevel: (callback: (level: number) => void) => () => void;

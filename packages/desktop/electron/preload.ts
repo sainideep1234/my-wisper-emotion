@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     retrySetup: () => ipcRenderer.invoke('retry_setup'),
     checkAccessibility: () => ipcRenderer.invoke('check_accessibility'),
     requestAccessibility: () => ipcRenderer.invoke('request_accessibility'),
+    checkFnKeySetting: () => ipcRenderer.invoke('check_fn_key_setting'),
     checkMicrophone: () => ipcRenderer.invoke('check_microphone'),
     requestMicrophone: () => ipcRenderer.invoke('request_microphone'),
     openExternalLink: (url: string) => ipcRenderer.invoke('open_external_link', url),
