@@ -47,6 +47,7 @@ rebuild_naudiodon() {
   local BREW_PA_REAL="/opt/homebrew/opt/portaudio/lib/libportaudio.2.dylib"
   if [[ -f "$NODE_FILE" ]] && [[ -f "$BREW_PA_REAL" ]]; then
     cp "$BREW_PA_REAL" "$NAUDIODON/build/Release/"
+    chmod 755 "$NAUDIODON/build/Release/libportaudio.2.dylib" # Ensure write permissions so xattr -cr doesn't fail
     install_name_tool -change "$BREW_PA_REAL" "@loader_path/libportaudio.2.dylib" "$NODE_FILE"
   fi
 }
