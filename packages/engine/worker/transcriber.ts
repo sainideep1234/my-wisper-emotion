@@ -31,6 +31,14 @@ export class Transcriber {
   private useGpu: boolean;
   private warmed = false;
   private prompt = '';
+  /** Raw vocabulary string, so setPrompt can skip work when nothing changed. */
+  private promptSource = '';
+  /**
+   * Cached BPE token ids for `prompt`, tied to the currently loaded model's
+   * vocabulary. Null means "not derived yet". Invalidated whenever the
+   * vocabulary or the model changes.
+   */
+  private promptTokens: Int32Array | null = null;
 
   constructor(config: TranscriberConfig) {
     this.modelPath = config.modelPath;
@@ -59,8 +67,12 @@ export class Transcriber {
   }
 
   setModelPath(modelPath: string) {
+    if (modelPath === this.modelPath) return;
     this.modelPath = modelPath;
     this.warmed = false;
+    // A different model file means a different vocabulary; token ids derived
+    // from the previous one would decode to the wrong words.
+    this.invalidatePromptCache();
   }
 
   /**
@@ -68,9 +80,24 @@ export class Transcriber {
    * n_text_ctx/2 (224 tokens for these models) and silently drops the overflow,
    * so keep it short — an over-stuffed prompt also makes the model hallucinate
    * these words into unrelated speech.
+   *
+   * The normalised prompt is memoised: the dictionary rarely changes but
+   * transcribe() runs on every utterance, so this is recomputed only when the
+   * vocabulary actually differs. setModelPath() also clears it, since a
+   * different model can carry a different vocabulary and any derived token IDs
+   * would no longer be valid for it.
    */
   setPrompt(prompt: string) {
-    this.prompt = (prompt || '').trim().slice(0, 800);
+    const raw = prompt || '';
+    if (raw === this.promptSource) return; // unchanged — keep the cached form
+    this.promptSource = raw;
+    this.prompt = raw.trim().slice(0, 800);
+    this.promptTokens = null;
+  }
+
+  /** Drop anything derived from the current vocabulary/model pairing. */
+  private invalidatePromptCache() {
+    this.promptTokens = null;
   }
 
   getModelPath(): string {

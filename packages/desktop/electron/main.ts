@@ -213,6 +213,18 @@ function getFnPollerPath(): string {
 }
 
 /**
+ * Space arrives either as uiohook's normalized keycode (57) or, when the event
+ * carries the platform code, as the macOS virtual keycode kVK_Space = 49.
+ *
+ * The 49 check MUST be against rawcode only: in uiohook's normalized keyspace
+ * 49 is the letter "N", so matching it on keycode would make pressing N start
+ * hands-free mode.
+ */
+function isSpaceKey(keycode: number, rawcode: number): boolean {
+    return keycode === UiohookKey.Space || rawcode === 49;
+}
+
+/**
  * Hotkey state machine:
  *   Hold Fn          → push-to-talk (release Fn to stop)
  *   Fn + Space       → hands-free lock (tap Fn again to stop)
@@ -256,6 +268,7 @@ function onFnUp() {
 function onSpaceDown() {
     if (isSpacePressed) return;
     isSpacePressed = true;
+    console.log(`[hotkey] Space down (fn=${isFnPressed} recording=${isRecordingActive} long=${isLongSession})`);
 
     // Promote active Fn hold into hands-free
     if (isFnPressed && isRecordingActive && !isLongSession) {
@@ -327,7 +340,11 @@ function setupGlobalHooks() {
                 raw === 63 || raw === 179 || raw === 0x3f;
             if (fnLike) onFnDown();
 
-            if (kc === UiohookKey.Space) onSpaceDown();
+            // uiohook's normalized code for Space is 57, but on macOS the event
+            // often carries the native virtual keycode (kVK_Space = 49) instead —
+            // the same reason Shift below needs its 56/60 fallbacks. Without this,
+            // Space was never seen and Fn+Space hands-free never engaged.
+            if (isSpaceKey(kc, raw)) onSpaceDown();
 
             const isShift =
                 kc === UiohookKey.Shift ||
@@ -368,7 +385,7 @@ function setupGlobalHooks() {
                 raw === 63 || raw === 179 || raw === 0x3f;
             if (fnLike) onFnUp();
 
-            if (kc === UiohookKey.Space) onSpaceUp();
+            if (isSpaceKey(kc, raw)) onSpaceUp();
 
             const isShift =
                 kc === UiohookKey.Shift ||
@@ -593,11 +610,70 @@ async function ensureMicrophoneAccess(): Promise<boolean> {
     }
 }
 
+/**
+ * Models already present on disk, largest-first so we prefer the better one.
+ * Checked straight off the filesystem so it works before the pipeline exists.
+ */
+function listDownloadedModelIds(): string[] {
+    const dir = getModelsDirPath();
+    return AVAILABLE_MODELS
+        .filter((m) => {
+            try {
+                return fs.statSync(path.join(dir, m.filename)).size > 10 * 1024 * 1024;
+            } catch {
+                return false;
+            }
+        })
+        .map((m) => m.id);
+}
+
+let setupState: { phase: 'idle' | 'downloading' | 'done' | 'error'; percent: number; error?: string } = {
+    phase: 'idle',
+    percent: 0,
+};
+
+function startDefaultModelDownload(): void {
+    if (setupState.phase === 'downloading') return;
+    setupState = { phase: 'downloading', percent: 0 };
+    sendToWindows('setup_started', { modelId: DEFAULT_MODEL_ID });
+
+    void downloadModelById(DEFAULT_MODEL_ID, (progress) => {
+        setupState = {
+            phase: progress.error ? 'error' : progress.done ? 'done' : 'downloading',
+            percent: progress.percent,
+            error: progress.error,
+        };
+        sendToWindows('download_progress', progress);
+    }).then((result) => {
+        setupState = result.success
+            ? { phase: 'done', percent: 100 }
+            : { phase: 'error', percent: 0, error: result.error };
+        if (pipeline) {
+            pipeline.refreshModelStatuses();
+            sendToWindows('pipeline_ready', {
+                models: pipeline.refreshModelStatuses(),
+                activeModel: pipeline.getActiveModelId(),
+            });
+        }
+        sendToWindows('setup_complete', { modelId: DEFAULT_MODEL_ID, success: result.success });
+    });
+}
+
 app.whenReady().then(async () => {
     createMainWindow();
     createOverlayWindow();
     createTray();
     startClipboardPolling();
+
+    // Start the model download BEFORE anything that can block. ensureMicrophoneAccess()
+    // waits on the macOS permission dialog, and pipeline.initialize() opens the mic —
+    // gating the download behind either left first-run users stuck at "Preparing… 0%"
+    // until they answered a prompt that may be hidden behind the window.
+    if (listDownloadedModelIds().length === 0) {
+        startDefaultModelDownload();
+    } else {
+        setupState = { phase: 'done', percent: 100 };
+    }
 
     // Request mic permission before any recording (macOS blocks silent audio without this)
     await ensureMicrophoneAccess();
@@ -655,22 +731,14 @@ app.whenReady().then(async () => {
         try { globalShortcut.unregisterAll(); } catch { /* */ }
     });
 
-    // First launch: auto-download the default Whisper model (base.en) if missing
-    const defaultModelDownloaded = pipeline?.refreshModelStatuses().find(m => m.id === DEFAULT_MODEL_ID)?.downloaded;
-    if (!defaultModelDownloaded) {
-        sendToWindows('setup_started', { modelId: DEFAULT_MODEL_ID });
-        downloadModelById(DEFAULT_MODEL_ID, (progress) => {
-            sendToWindows('download_progress', progress);
-        }).then((result) => {
-            if (pipeline) {
-                pipeline.refreshModelStatuses();
-                sendToWindows('pipeline_ready', {
-                    models: pipeline.refreshModelStatuses(),
-                    activeModel: pipeline.getActiveModelId(),
-                });
-            }
-            sendToWindows('setup_complete', { modelId: DEFAULT_MODEL_ID, success: result.success });
-        });
+    // If base.en is missing but the user already has another model, use that one
+    // instead of blocking them behind a 142 MB download they don't need.
+    const available = listDownloadedModelIds();
+    if (available.length > 0 && !available.includes(DEFAULT_MODEL_ID)) {
+        if (pipeline?.setModel(available[0]!)) {
+            console.log(`Using already-downloaded model: ${available[0]}`);
+            sendToWindows('model_changed', available[0]);
+        }
     }
 
     // Query updates on boot
@@ -806,9 +874,22 @@ ipcMain.handle('get_shift_c_paste_enabled', () => {
     return isShiftCPasteEnabled;
 });
 
-ipcMain.handle('is_setup_needed', () => {
-    return !(pipeline?.refreshModelStatuses().find(m => m.id === DEFAULT_MODEL_ID)?.downloaded);
-});
+// Setup is only "needed" when the user has NO usable model. Previously this
+// checked base.en specifically, so someone who already had tiny.en or small.en
+// was still forced through a 142 MB download.
+ipcMain.handle('is_setup_needed', () => listDownloadedModelIds().length === 0);
+
+/**
+ * Pull-based setup status. IPC pushed from the main process before the renderer
+ * has mounted its listeners is dropped, which used to strand the setup screen at
+ * "Preparing… 0%" forever. The UI polls this so a missed event self-corrects.
+ */
+ipcMain.handle('get_setup_status', () => ({
+    phase: setupState.phase,
+    percent: setupState.percent,
+    error: setupState.error,
+    hasModel: listDownloadedModelIds().length > 0,
+}));
 
 ipcMain.handle('check_microphone', () => {
     if (process.platform !== 'darwin') return true;
@@ -867,7 +948,13 @@ ipcMain.handle('check_fn_key_setting', () => {
 // Persisted in userData so it survives updates. Entries do double duty: they are
 // exact post-transcription replacements AND they seed whisper's initial_prompt,
 // which biases the decoder toward these spellings so the fix often isn't needed.
-interface DictionaryEntry { from: string; to: string }
+/**
+ * `word` is the correct spelling — that alone is usually enough, because it is
+ * fed to whisper as initial_prompt and biases the decoder before it commits.
+ * `heardAs` is the optional fallback for words the model still gets wrong, and
+ * becomes an exact post-transcription replacement.
+ */
+interface DictionaryEntry { word: string; heardAs?: string }
 
 function getDictionaryPath(): string {
     return path.join(app.getPath('userData'), 'dictionary.json');
@@ -879,9 +966,17 @@ function loadDictionary(): DictionaryEntry[] {
         const parsed = JSON.parse(raw);
         if (!Array.isArray(parsed)) return [];
         return parsed
-            .filter((e: any) => e && typeof e.from === 'string' && typeof e.to === 'string')
-            .map((e: any) => ({ from: e.from.trim(), to: e.to.trim() }))
-            .filter((e: DictionaryEntry) => e.from && e.to);
+            .map((e: any): DictionaryEntry | null => {
+                if (!e) return null;
+                // Migrate the earlier {from,to} shape: `to` was the correct spelling.
+                if (typeof e.word !== 'string' && typeof e.to === 'string') {
+                    return { word: String(e.to).trim(), heardAs: String(e.from ?? '').trim() || undefined };
+                }
+                if (typeof e.word !== 'string') return null;
+                const heardAs = String(e.heardAs ?? '').trim();
+                return { word: e.word.trim(), heardAs: heardAs || undefined };
+            })
+            .filter((e: DictionaryEntry | null): e is DictionaryEntry => !!e && !!e.word);
     } catch {
         return [];
     }
@@ -898,19 +993,65 @@ function saveDictionary(entries: DictionaryEntry[]): void {
 /** Push the dictionary into the live pipeline without needing a restart. */
 function applyDictionary(entries: DictionaryEntry[]): void {
     const replacements: Record<string, string> = {};
-    for (const e of entries) replacements[e.from] = e.to;
-    // The corrected spellings are what we want whisper to produce in the first place.
-    const vocabulary = entries.map((e) => e.to).join(', ');
+    for (const e of entries) {
+        if (e.heardAs) replacements[e.heardAs] = e.word;
+    }
+    // Every word biases the decoder, whether or not a fallback was supplied.
+    const vocabulary = entries.map((e) => e.word).join(', ');
     pipeline?.setDictionary?.({ replacements, snippets: {} });
     pipeline?.setVocabulary?.(vocabulary);
 }
+
+/**
+ * Permanently remove a downloaded model file to free disk space.
+ *
+ * Guarded: refuses to delete the last remaining model (that would leave the app
+ * unable to transcribe at all), and switches the pipeline to another model
+ * first if the one being deleted is currently active.
+ */
+ipcMain.handle('delete_model', (_event, modelId: string) => {
+    const model = AVAILABLE_MODELS.find((m) => m.id === modelId);
+    if (!model) return { success: false, error: 'Unknown model' };
+
+    const downloaded = listDownloadedModelIds();
+    if (!downloaded.includes(modelId)) {
+        return { success: false, error: 'That model is not on this Mac' };
+    }
+    if (downloaded.length === 1) {
+        return { success: false, error: 'This is your only speech model. Download another one first.' };
+    }
+
+    // Move off it before removing the file it points at.
+    if (pipeline?.getActiveModelId() === modelId) {
+        const fallback = downloaded.find((id) => id !== modelId);
+        if (fallback && pipeline.setModel(fallback)) {
+            sendToWindows('model_changed', fallback);
+        }
+    }
+
+    const dir = getModelsDirPath();
+    try {
+        fs.unlinkSync(path.join(dir, model.filename));
+        // Clean up a partial download left behind by an interrupted attempt.
+        try { fs.unlinkSync(path.join(dir, `${model.filename}.tmp`)); } catch { /* none */ }
+        model.downloaded = false;
+        const models = pipeline?.refreshModelStatuses() ?? [];
+        sendToWindows('pipeline_ready', { models, activeModel: pipeline?.getActiveModelId() });
+        return { success: true, models, activeModel: pipeline?.getActiveModelId() };
+    } catch (e: any) {
+        return { success: false, error: e?.message || 'Could not remove the file' };
+    }
+});
 
 ipcMain.handle('get_dictionary', () => loadDictionary());
 
 ipcMain.handle('set_dictionary', (_event, entries: DictionaryEntry[]) => {
     const clean = (Array.isArray(entries) ? entries : [])
-        .map((e) => ({ from: String(e?.from ?? '').trim(), to: String(e?.to ?? '').trim() }))
-        .filter((e) => e.from && e.to);
+        .map((e) => {
+            const heardAs = String(e?.heardAs ?? '').trim();
+            return { word: String(e?.word ?? '').trim(), heardAs: heardAs || undefined };
+        })
+        .filter((e) => e.word);
     saveDictionary(clean);
     applyDictionary(clean);
     return clean;
@@ -925,20 +1066,8 @@ ipcMain.handle('open_external_link', (_event, url: string) => {
 });
 
 ipcMain.handle('retry_setup', () => {
-    if (!(pipeline?.refreshModelStatuses().find(m => m.id === DEFAULT_MODEL_ID)?.downloaded)) {
-        sendToWindows('setup_started', { modelId: DEFAULT_MODEL_ID });
-        downloadModelById(DEFAULT_MODEL_ID, (progress) => {
-            sendToWindows('download_progress', progress);
-        }).then((result) => {
-            if (pipeline) {
-                pipeline.refreshModelStatuses();
-                sendToWindows('pipeline_ready', {
-                    models: pipeline.refreshModelStatuses(),
-                    activeModel: pipeline.getActiveModelId(),
-                });
-            }
-            sendToWindows('setup_complete', { modelId: DEFAULT_MODEL_ID, success: result.success });
-        });
+    if (listDownloadedModelIds().length === 0) {
+        startDefaultModelDownload();
     }
     return { triggered: true };
 });

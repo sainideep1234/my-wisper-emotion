@@ -23,6 +23,19 @@ import {
   IconLogo,
 } from './icons';
 
+/**
+ * Plain-language labels for the speech options. The engine names them after the
+ * underlying Whisper weights ("Whisper Base (English)", RAM figures, .bin sizes),
+ * which means nothing to someone who just wants to dictate.
+ */
+const FRIENDLY_MODELS: Record<string, { title: string; bestFor: string }> = {
+  'tiny.en': { title: 'Fastest', bestFor: 'Quick notes and short messages' },
+  'base.en': { title: 'Everyday', bestFor: 'Good balance of speed and accuracy' },
+  'small.en': { title: 'More accurate', bestFor: 'Technical words and names' },
+  'medium.en': { title: 'Very accurate', bestFor: 'Strong accents or noisy rooms' },
+  'large-v3': { title: 'Most accurate', bestFor: 'Other languages, slowest to respond' },
+};
+
 interface ModelInfo {
   id: string;
   name: string;
@@ -98,7 +111,7 @@ export const App: React.FC = () => {
     typeof window !== 'undefined' &&
     (window.location.search.includes('overlay=1') || window.location.hash.includes('overlay=1'));
 
-  const [activeTab, setActiveTab] = useState<'dictate' | 'models' | 'emotions' | 'settings' | 'clipboard'>(
+  const [activeTab, setActiveTab] = useState<'dictate' | 'models' | 'emotions' | 'settings' | 'clipboard' | 'dictionary'>(
     'dictate',
   );
   const [isRecording, setIsRecording] = useState(false);
@@ -145,10 +158,15 @@ export const App: React.FC = () => {
   const [fnKeyValue, setFnKeyValue] = useState<number | null>(null);
 
   // Custom dictionary (persisted in userData by the main process)
-  const [dictionary, setDictionary] = useState<{ from: string; to: string }[]>([]);
-  const [dictFrom, setDictFrom] = useState('');
-  const [dictTo, setDictTo] = useState('');
+  const [dictionary, setDictionary] = useState<{ word: string; heardAs?: string }[]>([]);
+  const [dictWord, setDictWord] = useState('');
+  const [dictHeardAs, setDictHeardAs] = useState('');
+  const [dictShowFallback, setDictShowFallback] = useState(false);
   const [dictSaved, setDictSaved] = useState(false);
+
+  // Model deletion: two-step confirm, since this erases a multi-hundred-MB file
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [modelError, setModelError] = useState<string | null>(null);
 
   // Smooth audio level for overlay wave animation (Whisper Flow style)
   useEffect(() => {
@@ -201,6 +219,30 @@ export const App: React.FC = () => {
       }
     });
 
+    // Poll the real setup state. Events pushed before this component mounted are
+    // dropped by Electron, which previously left the screen stuck at "Preparing… 0%".
+    const pollSetup = setInterval(() => {
+      window.electronAPI.getSetupStatus?.().then((s) => {
+        if (!s) return;
+        if (s.hasModel || s.phase === 'done') {
+          setSetupPercent(100);
+          setSetupPhase('done');
+          setTimeout(() => setFirstLaunchGate('done'), 400);
+          clearInterval(pollSetup);
+          return;
+        }
+        if (s.phase === 'error') {
+          setSetupPhase('error');
+          setSetupError(s.error || null);
+          return;
+        }
+        if (s.phase === 'downloading') {
+          setSetupPhase('downloading');
+          setSetupPercent(s.percent);
+        }
+      });
+    }, 700);
+
     const checkAccess = () => {
       window.electronAPI.checkAccessibility?.().then((granted) => {
         setAccessibilityGranted(granted);
@@ -211,7 +253,10 @@ export const App: React.FC = () => {
     };
     checkAccess();
     const interval = setInterval(checkAccess, 3000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      clearInterval(pollSetup);
+    };
   }, []);
 
   const handleRequestAccessibility = async () => {
@@ -238,7 +283,7 @@ export const App: React.FC = () => {
     });
   }, []);
 
-  const persistDictionary = async (next: { from: string; to: string }[]) => {
+  const persistDictionary = async (next: { word: string; heardAs?: string }[]) => {
     setDictionary(next);
     const saved = await window.electronAPI?.setDictionary?.(next);
     if (Array.isArray(saved)) setDictionary(saved);
@@ -247,18 +292,19 @@ export const App: React.FC = () => {
   };
 
   const handleAddDictionaryEntry = () => {
-    const from = dictFrom.trim();
-    const to = dictTo.trim();
-    if (!from || !to) return;
-    // Replace in place if the same spoken form already exists
-    const next = [...dictionary.filter((e) => e.from.toLowerCase() !== from.toLowerCase()), { from, to }];
-    setDictFrom('');
-    setDictTo('');
+    const word = dictWord.trim();
+    if (!word) return;
+    const heardAs = dictHeardAs.trim() || undefined;
+    // Same word added again just updates its fallback
+    const next = [...dictionary.filter((e) => e.word.toLowerCase() !== word.toLowerCase()), { word, heardAs }];
+    setDictWord('');
+    setDictHeardAs('');
+    setDictShowFallback(false);
     void persistDictionary(next);
   };
 
-  const handleRemoveDictionaryEntry = (from: string) => {
-    void persistDictionary(dictionary.filter((e) => e.from !== from));
+  const handleRemoveDictionaryEntry = (word: string) => {
+    void persistDictionary(dictionary.filter((e) => e.word !== word));
   };
 
   useEffect(() => {
@@ -468,6 +514,18 @@ export const App: React.FC = () => {
     window.electronAPI?.stopDictation();
   };
 
+  const handleDeleteModel = async (m: ModelInfo) => {
+    setConfirmDeleteId(null);
+    const res = await window.electronAPI?.deleteModel?.(m.id);
+    if (!res?.success) {
+      setModelError(res?.error || 'Could not remove that model.');
+      return;
+    }
+    setModelError(null);
+    if (Array.isArray(res.models)) setModels(res.models);
+    if (res.activeModel) setSelectedModel(res.activeModel);
+  };
+
   const handleSelectModel = async (m: ModelInfo) => {
     if (!m.downloaded) return;
     if (window.electronAPI) {
@@ -570,60 +628,61 @@ export const App: React.FC = () => {
           }
         `}</style>
 
-        {/* Glowing Aura Container */}
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', minWidth: 220, maxWidth: 336, height: 46, '--wave-color': currentEmotionColor } as any}>
-          {isRecording && (
+        {/* Capsule hugs its content — a fixed 100% width made it look stretched */}
+        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 'fit-content', maxWidth: 340, height: 40, '--wave-color': currentEmotionColor } as any}>
+          {isRecording && isSpeaking && (
             <div style={{
               position: 'absolute',
               inset: 0,
               borderRadius: 999,
               border: `1px solid ${currentEmotionColor}`,
-              animation: 'aura-wave 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite',
+              animation: 'aura-wave 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite',
               zIndex: 0,
               pointerEvents: 'none',
+              opacity: 0.5,
             }} />
           )}
 
-          {/* Main Pill */}
+          {/* Main capsule — macOS-style vibrancy: translucent, heavily blurred,
+              hairline light border, soft elevation shadow. */}
           <div style={{
-            width: '100%', height: '100%',
-            borderRadius: 999, display: 'flex', alignItems: 'center',
-            justifyContent: 'space-between', padding: '0 12px',
-            background: 'rgba(10, 12, 16, 0.88)',
-            border: `1px solid ${isRecording ? `${currentEmotionColor}55` : '#2A3144'}`,
+            height: '100%',
+            borderRadius: 999, display: 'inline-flex', alignItems: 'center',
+            gap: 10, padding: '0 14px',
+            background: 'rgba(28, 30, 38, 0.72)',
+            border: '1px solid rgba(255, 255, 255, 0.10)',
             boxShadow: isRecording
-              ? `0 8px 32px rgba(0,0,0,0.45), 0 0 12px ${currentEmotionColor}33`
-              : '0 8px 32px rgba(0,0,0,0.4)',
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)',
+              ? `0 10px 34px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07), 0 0 0 1px ${currentEmotionColor}22`
+              : '0 10px 34px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07)',
+            backdropFilter: 'blur(28px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(28px) saturate(180%)',
             WebkitAppRegion: 'drag',
             zIndex: 1,
-            transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
+            transition: 'box-shadow 0.3s ease',
           } as any}>
             {/* Mic + wave bars. minWidth:0 lets this side shrink instead of
-                pushing the emotion badge past the pill's rounded edge. */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '1 1 auto', overflow: 'hidden', WebkitAppRegion: 'no-drag' } as any}>
+                pushing the emotion badge past the capsule's rounded edge. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0, overflow: 'hidden', WebkitAppRegion: 'no-drag' } as any}>
               <div style={{
-                width: 24, height: 24, borderRadius: 8, flexShrink: 0,
-                background: isRecording ? `${currentEmotionColor}22` : '#1A2132',
-                border: `1px solid ${isRecording ? currentEmotionColor : '#2D374E'}`,
+                width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                background: isRecording ? '#FFFFFF' : 'rgba(255,255,255,0.12)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                transition: 'all 0.3s ease',
+                transition: 'background 0.3s ease',
               }}>
                 {isProcessing ? (
                   <div style={{
-                    width: 12, height: 12, borderRadius: '50%',
-                    border: `2px solid ${currentEmotionColor}44`,
-                    borderTopColor: currentEmotionColor,
+                    width: 11, height: 11, borderRadius: '50%',
+                    border: '2px solid rgba(255,255,255,0.25)',
+                    borderTopColor: '#FFFFFF',
                     animation: 'wispr-spin 0.8s linear infinite',
                   }} />
                 ) : (
-                  <IconMic size={12} color={isRecording ? currentEmotionColor : '#94A3B8'} />
+                  <IconMic size={11} color={isRecording ? '#0B0D12' : 'rgba(255,255,255,0.75)'} />
                 )}
               </div>
 
               {/* Animated waveform */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 2, height: 24 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 2, height: 22 }}>
                 {waveMultipliers.map((mult, i) => {
                   const REST = 3;
                   let h = REST;
@@ -634,6 +693,7 @@ export const App: React.FC = () => {
                     // pow() lifts quiet speech; 0.2 -> ~0.38 instead of 0.2
                     h = REST + Math.pow(smoothLevel, 0.6) * 19 * mult;
                   }
+                  const lit = isRecording || isProcessing;
                   return (
                     <div
                       key={i}
@@ -641,9 +701,9 @@ export const App: React.FC = () => {
                         width: 2.5,
                         height: `${Math.min(22, h)}px`,
                         borderRadius: 2,
-                        background: isRecording || isProcessing ? barColor : '#3A4560',
-                        boxShadow: isRecording && isSpeaking ? `0 0 5px ${barColor}aa` : 'none',
-                        transition: 'height 0.07s ease-out, background 0.2s, box-shadow 0.2s',
+                        background: lit ? '#FFFFFF' : 'rgba(255,255,255,0.28)',
+                        opacity: lit && !isSpeaking && !isProcessing ? 0.5 : 1,
+                        transition: 'height 0.07s ease-out, opacity 0.2s',
                       }}
                     />
                   );
@@ -651,8 +711,9 @@ export const App: React.FC = () => {
               </div>
 
               <span style={{
-                fontSize: 11, fontWeight: 600, color: isRecording ? '#F1F5F9' : '#94A3B8',
-                whiteSpace: 'nowrap', marginLeft: 2,
+                fontSize: 11.5, fontWeight: 500, letterSpacing: '-0.01em',
+                color: isRecording || isProcessing ? '#FFFFFF' : 'rgba(255,255,255,0.72)',
+                whiteSpace: 'nowrap',
                 overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0,
               }}>
                 {statusLabel}
@@ -663,25 +724,20 @@ export const App: React.FC = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, WebkitAppRegion: 'no-drag', flexShrink: 0 } as any}>
               {isRecording && liveEmotion ? (
                 <div style={{
-                  padding: '2px 8px', borderRadius: 6,
-                  background: '#131824', border: `1px solid ${currentEmotionColor}44`,
-                  color: currentEmotionColor, fontSize: 9, fontWeight: 600,
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  boxShadow: `0 0 6px ${currentEmotionColor}22`,
+                  padding: '3px 8px', borderRadius: 999,
+                  background: `${currentEmotionColor}1f`,
+                  color: currentEmotionColor, fontSize: 10, fontWeight: 600,
+                  letterSpacing: '-0.01em',
+                  display: 'flex', alignItems: 'center', gap: 5,
                   maxWidth: 104, whiteSpace: 'nowrap',
                 }}>
-                  <IconActivity size={10} color={currentEmotionColor} style={{ flexShrink: 0 }} />
+                  <span style={{
+                    width: 5, height: 5, borderRadius: '50%', flexShrink: 0,
+                    background: currentEmotionColor,
+                  }} />
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentEmotionLabel}</span>
                 </div>
-              ) : (
-                <span style={{
-                  fontSize: 10, color: accessibilityGranted ? '#64748B' : '#F59E0B',
-                  fontFamily: 'monospace',
-                }} title={accessibilityGranted ? 'Hold Fn to dictate' : 'Use Cmd+Option+Space'}
-                >
-                  {accessibilityGranted ? (isLongSession ? 'fn tap' : 'fn') : '⌘⌥␣'}
-                </span>
-              )}
+              ) : null}
             </div>
           </div>
         </div>
@@ -822,67 +878,82 @@ export const App: React.FC = () => {
 
     return (
       <div style={{
-        height: '100vh', width: '100vw', background: '#090B0E',
+        height: '100vh', width: '100vw', background: '#09090B',
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         justifyContent: 'center', fontFamily: 'system-ui, -apple-system, sans-serif',
         WebkitAppRegion: 'drag',
       } as any}>
-        <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <IconLogo size={36} />
-          <span style={{ fontSize: 18, fontWeight: 700, color: '#F1F5F9', letterSpacing: '-0.3px' }}>
-            Wisper Emotion
+        <div style={{ marginBottom: 18, display: 'flex', alignItems: 'center', gap: 9 }}>
+          <IconLogo size={20} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#A1A1AA', letterSpacing: '-0.01em' }}>
+            Wisper
           </span>
         </div>
 
+        <style>{`
+          @keyframes setup-indeterminate {
+            0%   { left: -30%; }
+            100% { left: 100%; }
+          }
+        `}</style>
+
         <div style={{
-          width: 420, background: '#121520', border: '1px solid #22283A',
-          borderRadius: 14, padding: '32px', WebkitAppRegion: 'no-drag',
+          width: 360, background: '#0F0F11', border: '1px solid #1F1F23',
+          borderRadius: 10, padding: '24px 24px 22px', WebkitAppRegion: 'no-drag',
         } as any}>
 
-          <div style={{ marginBottom: 24, textAlign: 'center' }}>
-            <div style={{
-              width: 52, height: 52, borderRadius: 14,
-              background: isDone ? '#064E3B' : isError ? '#2D1616' : '#1A2336',
-              border: `1px solid ${isDone ? '#10B981' : isError ? '#642828' : '#0EA5E9'}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 16px',
+          <div style={{ marginBottom: 22 }}>
+            <h2 style={{
+              fontSize: 15, fontWeight: 600, color: '#F4F4F5',
+              letterSpacing: '-0.01em', margin: '0 0 6px',
             }}>
-              {isDone
-                ? <IconCheck size={24} color="#10B981" />
-                : isError
-                  ? <IconShield size={24} color="#64748B" />
-                  : <IconDownload size={24} color="#0EA5E9" style={isDownloading || isWaiting ? { animation: 'pulse 1.5s ease-in-out infinite' } : {}} />
-              }
-            </div>
-            <h2 className="text-[17px] font-bold text-neutral-100 mb-1.5">
-              {isDone ? 'Engine Ready' : isError ? 'Download Interrupted' : 'Initializing Speech Engine'}
+              {isDone ? 'Ready' : isError ? 'Download failed' : 'Setting up'}
             </h2>
-            <p style={{ fontSize: 13, color: '#94A3B8', lineHeight: 1.55 }}>
+            <p style={{ fontSize: 12.5, color: '#8B8B93', lineHeight: 1.5, margin: 0 }}>
               {isDone
-                ? 'Whisper Base is ready. Launching dictation console…'
+                ? 'Opening Wisper.'
                 : isError
-                  ? (setupError || 'Unable to download Whisper model. Please check network.')
-                  : 'Downloading default speech model (Whisper Base — 142 MB). Runs 100% locally.'}
+                  ? (setupError || 'Check your connection and try again.')
+                  : 'Downloading the speech model. This happens once — afterwards Wisper works offline.'}
             </p>
           </div>
 
           {!isError && (
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ fontSize: 12, color: '#94A3B8' }}>
-                  {isDone ? 'Completed' : isDownloading ? 'Downloading…' : 'Preparing…'}
-                </span>
-                <span style={{ fontSize: 12, fontFamily: 'monospace', color: isDone ? '#10B981' : '#0EA5E9' }}>
-                  {setupPercent}%
-                </span>
+            <div>
+              <div style={{
+                height: 3, background: 'rgba(255,255,255,0.08)',
+                overflow: 'hidden', position: 'relative',
+              }}>
+                {isWaiting || (isDownloading && setupPercent === 0) ? (
+                  <div style={{
+                    position: 'absolute', top: 0, bottom: 0, width: '30%',
+                    background: 'rgba(255,255,255,0.5)',
+                    animation: 'setup-indeterminate 1.4s ease-in-out infinite',
+                  }} />
+                ) : (
+                  <div style={{
+                    height: '100%',
+                    width: `${setupPercent}%`,
+                    background: '#F4F4F5',
+                    transition: 'width 0.4s linear',
+                  }} />
+                )}
               </div>
-              <div style={{ height: 6, borderRadius: 999, background: '#1A2132', overflow: 'hidden' }}>
-                <div style={{
-                  height: '100%',
-                  width: `${setupPercent}%`,
-                  background: isDone ? '#10B981' : '#0EA5E9',
-                  borderRadius: 999, transition: 'width 0.4s ease',
-                }} />
+
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+                marginTop: 10,
+              }}>
+                <span style={{ fontSize: 11.5, color: '#8B8B93' }}>
+                  {isDone ? 'Complete' : isDownloading && setupPercent > 0 ? 'Downloading' : 'Starting'}
+                </span>
+                <span style={{
+                  fontSize: 11.5, color: '#8B8B93',
+                  fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+                  fontVariantNumeric: 'tabular-nums',
+                }}>
+                  {setupPercent > 0 ? `${setupPercent}%` : '142 MB'}
+                </span>
               </div>
             </div>
           )}
@@ -891,14 +962,13 @@ export const App: React.FC = () => {
             <button
               onClick={handleRetrySetup}
               style={{
-                width: '100%', padding: '10px 0', borderRadius: 8,
-                background: '#0EA5E9', color: '#FFF', border: 'none',
-                fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                padding: '7px 14px', borderRadius: 7,
+                background: '#F4F4F5', color: '#09090B', border: 'none',
+                fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               }}
             >
-              <IconDownload size={14} />
-              Retry Download
+              Try again
             </button>
           )}
         </div>
@@ -1147,7 +1217,7 @@ export const App: React.FC = () => {
             <button className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer transition-all duration-150 w-full text-left border ${activeTab === 'models' ? 'bg-neutral-900/50 text-neutral-200 border-neutral-800/50' : 'bg-transparent text-neutral-400 border-transparent hover:bg-white/5 hover:text-neutral-200'}`} onClick={() => setActiveTab('models')}>
               <div className="flex items-center gap-2.5">
                 <IconCpu size={15} />
-                <span>Models</span>
+                <span>Accuracy</span>
               </div>
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-900/50 text-neutral-500 flex items-center gap-1">
                 {models.filter((m) => m.downloaded).length}/{models.length}
@@ -1157,7 +1227,7 @@ export const App: React.FC = () => {
             <button className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer transition-all duration-150 w-full text-left border ${activeTab === 'emotions' ? 'bg-neutral-900/50 text-neutral-200 border-neutral-800/50' : 'bg-transparent text-neutral-400 border-transparent hover:bg-white/5 hover:text-neutral-200'}`} onClick={() => setActiveTab('emotions')}>
               <div className="flex items-center gap-2.5">
                 <IconHeart size={15} color={isRecording ? currentEmotionColor : undefined} />
-                <span>Emotions</span>
+                <span>Tone</span>
               </div>
             </button>
 
@@ -1167,6 +1237,14 @@ export const App: React.FC = () => {
                 <span>Clipboard</span>
               </div>
               {clipboardHistory.length > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-900/50 text-neutral-500 flex items-center gap-1">{clipboardHistory.length}</span>}
+            </button>
+
+            <button className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer transition-all duration-150 w-full text-left border ${activeTab === 'dictionary' ? 'bg-neutral-900/50 text-neutral-200 border-neutral-800/50' : 'bg-transparent text-neutral-400 border-transparent hover:bg-white/5 hover:text-neutral-200'}`} onClick={() => setActiveTab('dictionary')}>
+              <div className="flex items-center gap-2.5">
+                <IconStar size={15} />
+                <span>Dictionary</span>
+              </div>
+              {dictionary.length > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-900/50 text-neutral-500 flex items-center gap-1">{dictionary.length}</span>}
             </button>
 
             <button className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer transition-all duration-150 w-full text-left border ${activeTab === 'settings' ? 'bg-neutral-900/50 text-neutral-200 border-neutral-800/50' : 'bg-transparent text-neutral-400 border-transparent hover:bg-white/5 hover:text-neutral-200'}`} onClick={() => setActiveTab('settings')}>
@@ -1240,8 +1318,7 @@ export const App: React.FC = () => {
               </div>
             </div>
             <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, lineHeight: 1.5 }}>
-              Without microphone access, recording captures silence and Whisper returns wrong text.
-              Enable <strong>Electron</strong> in System Settings → Privacy & Security → Microphone.
+              Wisper can't hear you yet. Turn on microphone access for Wisper.
             </p>
             <div>
               <button className="select-btn active" onClick={handleRequestMicrophone}>
@@ -1257,17 +1334,17 @@ export const App: React.FC = () => {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <IconShield size={16} color="#0EA5E9" />
                 <span className="card-title" style={{ color: '#0EA5E9' }}>
-                  macOS Accessibility Permission Required
+                  One more permission needed
                 </span>
               </div>
             </div>
             <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, lineHeight: 1.5 }}>
-              For <code className="kbd">fn</code> hotkeys, enable <strong>Electron</strong> (not Cursor) under System Settings → Privacy & Security → Accessibility.
-              Backup shortcut: <code className="kbd">⌘ ⌥ Space</code>. Or use the hold button below — no permission needed.
+              Wisper needs Accessibility access to type for you. Until then your words are
+              copied — paste with <code className="kbd">⌘ V</code>.
             </p>
             <div>
               <button className="select-btn active" onClick={handleRequestAccessibility}>
-                Grant Permission
+                Open Settings
               </button>
             </div>
           </div>
@@ -1312,10 +1389,17 @@ export const App: React.FC = () => {
               </span>
             </div>
 
+            {/* One-line hint until they've dictated once, then it disappears. */}
+            {history.length === 0 && (
+              <p style={{ fontSize: 12.5, color: '#64748B', margin: '0 0 16px' }}>
+                Click where you want the text, hold <code className="kbd">fn</code>, and speak.
+              </p>
+            )}
+
             <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4 mb-6">
               <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-3.5" style={{ borderColor: isRecording ? `${currentEmotionColor}66` : undefined }}>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Live Trigger</span>
+                  <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Dictate</span>
                   {isRecording && liveEmotion && (
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap" style={{ color: currentEmotionColor, borderColor: `${currentEmotionColor}44` }}>
                       <EmotionIcon label={liveEmotion.label} size={12} />
@@ -1352,21 +1436,26 @@ export const App: React.FC = () => {
                   <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Latest Transcript</span>
                 </div>
                 <p style={{ fontSize: 14, color: lastTranscript ? '#F1F5F9' : '#64748B', margin: 0, lineHeight: 1.5, minHeight: 40 }}>
-                  {partialText || lastTranscript || (isRecording ? 'Listening…' : 'Hold the button above and speak. Transcript appears here and streams to your cursor.')}
+                  {partialText || lastTranscript || (isRecording ? 'Listening…' : 'Your words will appear here.')}
                 </p>
               </div>
 
               <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-3.5">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Active Speech Model</span>
-                  {activeModel && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap">{activeModel.weightSize}</span>}
+                  <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Accuracy</span>
+                  <button
+                    onClick={() => setActiveTab('models')}
+                    style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 11, color: '#64748B', textDecoration: 'underline', textUnderlineOffset: 3 }}
+                  >
+                    Change
+                  </button>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <span style={{ fontSize: 14, fontWeight: 600, color: '#F8FAFC' }}>
-                    {activeModel?.name || 'Whisper Base (English)'}
+                    {(activeModel && FRIENDLY_MODELS[activeModel.id]?.title) || 'Everyday'}
                   </span>
                   <span style={{ fontSize: 12, color: '#94A3B8' }}>
-                    {activeModel?.description || 'Selected speech recognition model'}
+                    {(activeModel && FRIENDLY_MODELS[activeModel.id]?.bestFor) || 'Good balance of speed and accuracy'}
                   </span>
                 </div>
               </div>
@@ -1415,24 +1504,23 @@ export const App: React.FC = () => {
           <div>
             <div className="flex items-start justify-between mb-6">
               <div>
-                <h1 className="text-xl font-bold text-neutral-200 tracking-tight leading-tight">Model Management</h1>
+                <h1 className="text-xl font-bold text-neutral-200 tracking-tight leading-tight">Accuracy</h1>
                 <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
-                  Select and manage Whisper speech model weights locally on your system.
+                  Faster responds quicker, slower understands more
                 </p>
+                {modelError && (
+                  <p style={{ fontSize: 11.5, color: '#F87171', marginTop: 8 }}>{modelError}</p>
+                )}
               </div>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap">
-                {models.filter((m) => m.downloaded).length} of {models.length} Downloaded
-              </span>
             </div>
 
             <table className="w-full border-collapse border border-neutral-900 rounded-xl overflow-hidden bg-[#0A0A0A]">
               <thead>
                 <tr>
-                  <th>Model Identifier</th>
-                  <th>Weight File Size</th>
-                  <th>Required RAM</th>
-                  <th>Status</th>
-                  <th>Action</th>
+                  <th>Option</th>
+                  <th>Best for</th>
+                  <th>Download size</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -1442,28 +1530,28 @@ export const App: React.FC = () => {
                   return (
                     <tr key={m.id}>
                       <td>
-                        <div style={{ fontWeight: 600, color: '#F1F5F9' }}>{m.name}</div>
-                        <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>{m.description}</div>
+                        <div style={{ fontWeight: 600, color: '#F1F5F9', display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {FRIENDLY_MODELS[m.id]?.title ?? m.name}
+                          {m.id === 'base.en' && (
+                            <span style={{ fontSize: 10, fontWeight: 600, color: '#10B981', background: '#10B9811f', padding: '2px 6px', borderRadius: 999 }}>
+                              Recommended
+                            </span>
+                          )}
+                          {isDownloading && (
+                            <span style={{ fontSize: 10, color: '#94A3B8', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <IconSpinner size={10} style={{ animation: 'spin 1s linear infinite' }} />
+                              {dl.percent}%
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td style={{ fontSize: 11.5, color: '#94A3B8' }}>
+                        {FRIENDLY_MODELS[m.id]?.bestFor ?? m.description}
                       </td>
                       <td>
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap" style={{ fontWeight: 600, color: '#F1F5F9', background: '#181E2B' }}>
-                          {m.weightSize}
+                        <span style={{ fontSize: 11.5, color: m.downloaded ? '#10B981' : '#94A3B8' }}>
+                          {m.downloaded ? 'On your Mac' : m.weightSize}
                         </span>
-                      </td>
-                      <td>{m.ramRequired}</td>
-                      <td>
-                        {isDownloading ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap" style={{ color: '#0EA5E9' }}>
-                            <IconSpinner size={10} style={{ animation: 'spin 1s linear infinite' }} />
-                            {dl.percent}%
-                          </span>
-                        ) : m.downloaded ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap" style={{ color: '#10B981', borderColor: '#10B98144' }}>
-                            Downloaded
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap" style={{ color: '#64748B' }}>Not Installed</span>
-                        )}
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: 6 }}>
@@ -1477,6 +1565,34 @@ export const App: React.FC = () => {
                             <button onClick={() => handleSelectModel(m)} className={`select-btn ${selectedModel === m.id ? 'active' : ''}`}>
                               {selectedModel === m.id ? 'Active' : 'Select'}
                             </button>
+                          )}
+                          {m.downloaded && (
+                            confirmDeleteId === m.id ? (
+                              <>
+                                <button
+                                  onClick={() => handleDeleteModel(m)}
+                                  className="px-3 py-1.5 rounded-md text-[11px] font-medium cursor-pointer whitespace-nowrap"
+                                  style={{ background: '#7F1D1D', border: '1px solid #991B1B', color: '#FEE2E2' }}
+                                >
+                                  Delete {m.weightSize}
+                                </button>
+                                <button
+                                  onClick={() => setConfirmDeleteId(null)}
+                                  className="px-3 py-1.5 rounded-md bg-[#0A0A0A] border border-neutral-800 text-neutral-400 text-[11px] font-medium cursor-pointer whitespace-nowrap hover:bg-white/5"
+                                >
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                onClick={() => { setConfirmDeleteId(m.id); setModelError(null); }}
+                                title="Remove from this Mac to free up space"
+                                className="px-2 py-1.5 rounded-md bg-[#0A0A0A] border border-neutral-800 text-neutral-500 text-[11px] font-medium cursor-pointer whitespace-nowrap hover:bg-white/5 hover:text-neutral-300"
+                                style={{ display: 'flex', alignItems: 'center' }}
+                              >
+                                <IconTrash size={12} />
+                              </button>
+                            )
                           )}
                         </div>
                       </td>
@@ -1593,86 +1709,112 @@ export const App: React.FC = () => {
               </div>
             </div>
 
-            {/* ── Custom dictionary ── */}
-            <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-4" style={{ marginTop: 16 }}>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    Custom Dictionary
-                    {dictSaved && (
-                      <span style={{ fontSize: 10, fontWeight: 600, color: '#10B981', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        <IconCheck size={11} color="#10B981" /> Saved
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2, lineHeight: 1.5 }}>
-                    Fix words Wisper mishears. Your corrected spellings are also fed to the speech model,
-                    so it learns to get them right instead of only fixing them afterwards.
-                  </div>
-                </div>
-              </div>
+          </div>
+        )}
 
+        {activeTab === 'dictionary' && (
+          <div>
+            <div className="flex items-start justify-between mb-6">
+              <div>
+                <h1 className="text-xl font-bold text-neutral-200 tracking-tight leading-tight">Dictionary</h1>
+                <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
+                  Names and terms Wisper should spell correctly
+                </p>
+              </div>
+              {dictSaved && (
+                <span style={{ fontSize: 11, fontWeight: 600, color: '#10B981', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <IconCheck size={12} color="#10B981" /> Saved
+                </span>
+              )}
+            </div>
+
+            <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-4">
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input
-                  value={dictFrom}
-                  onChange={(e) => setDictFrom(e.target.value)}
+                  value={dictWord}
+                  onChange={(e) => setDictWord(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleAddDictionaryEntry(); }}
-                  placeholder="Wisper hears…  e.g. get hub"
+                  placeholder="Add a word…  e.g. GitHub, Kubernetes, Priya"
                   style={{
-                    flex: 1, minWidth: 0, padding: '8px 10px', borderRadius: 8,
+                    flex: 1, minWidth: 0, padding: '9px 11px', borderRadius: 8,
                     background: '#0D1017', border: '1px solid #1E2536',
-                    color: '#F1F5F9', fontSize: 12, outline: 'none',
-                  }}
-                />
-                <span style={{ color: '#475569', fontSize: 13, flexShrink: 0 }}>→</span>
-                <input
-                  value={dictTo}
-                  onChange={(e) => setDictTo(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddDictionaryEntry(); }}
-                  placeholder="should write…  e.g. GitHub"
-                  style={{
-                    flex: 1, minWidth: 0, padding: '8px 10px', borderRadius: 8,
-                    background: '#0D1017', border: '1px solid #1E2536',
-                    color: '#F1F5F9', fontSize: 12, outline: 'none',
+                    color: '#F1F5F9', fontSize: 12.5, outline: 'none',
                   }}
                 />
                 <button
                   className="select-btn active"
                   onClick={handleAddDictionaryEntry}
-                  disabled={!dictFrom.trim() || !dictTo.trim()}
-                  style={{ flexShrink: 0, opacity: !dictFrom.trim() || !dictTo.trim() ? 0.45 : 1 }}
+                  disabled={!dictWord.trim()}
+                  style={{ flexShrink: 0, opacity: !dictWord.trim() ? 0.45 : 1 }}
                 >
                   Add
                 </button>
               </div>
+
+              {/* Fallback for the rare word the model still refuses to get right */}
+              {dictShowFallback ? (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input
+                    value={dictHeardAs}
+                    onChange={(e) => setDictHeardAs(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleAddDictionaryEntry(); }}
+                    placeholder="If it still gets it wrong, what does it write?  e.g. get hub"
+                    style={{
+                      flex: 1, minWidth: 0, padding: '9px 11px', borderRadius: 8,
+                      background: '#0D1017', border: '1px solid #1E2536',
+                      color: '#F1F5F9', fontSize: 12, outline: 'none',
+                    }}
+                  />
+                  <button
+                    className="px-3 py-1.5 rounded-md bg-[#0A0A0A] border border-neutral-800 text-neutral-400 text-[11px] font-medium cursor-pointer hover:bg-white/5"
+                    onClick={() => { setDictShowFallback(false); setDictHeardAs(''); }}
+                    style={{ flexShrink: 0 }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setDictShowFallback(true)}
+                  style={{
+                    alignSelf: 'flex-start', background: 'none', border: 'none', padding: 0,
+                    color: '#64748B', fontSize: 11, cursor: 'pointer', textDecoration: 'underline',
+                    textUnderlineOffset: 3,
+                  }}
+                >
+                  Add a correction
+                </button>
+              )}
 
               {dictionary.length === 0 ? (
                 <div style={{
                   fontSize: 11, color: '#64748B', textAlign: 'center',
                   padding: '14px 0', border: '1px dashed #1E2536', borderRadius: 8,
                 }}>
-                  No words yet. Add one above to improve accuracy.
+                  No words yet
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {dictionary.map((entry) => (
                     <div
-                      key={entry.from}
+                      key={entry.word}
                       style={{
                         display: 'flex', alignItems: 'center', gap: 10,
-                        padding: '8px 10px', borderRadius: 8,
+                        padding: '9px 11px', borderRadius: 8,
                         background: '#0D1017', border: '1px solid #1E2536',
                       }}
                     >
-                      <span style={{ fontSize: 12, color: '#94A3B8', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {entry.from}
+                      <span style={{ fontSize: 12.5, color: '#F1F5F9', fontWeight: 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {entry.word}
                       </span>
-                      <span style={{ color: '#475569', fontSize: 12, flexShrink: 0 }}>→</span>
-                      <span style={{ fontSize: 12, color: '#F1F5F9', fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {entry.to}
-                      </span>
+                      {entry.heardAs && (
+                        <span style={{ fontSize: 11, color: '#64748B', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          also fixes “{entry.heardAs}”
+                        </span>
+                      )}
+                      <span style={{ flex: 1 }} />
                       <button
-                        onClick={() => handleRemoveDictionaryEntry(entry.from)}
+                        onClick={() => handleRemoveDictionaryEntry(entry.word)}
                         title="Remove"
                         style={{
                           flexShrink: 0, background: 'transparent', border: 'none',
@@ -1686,9 +1828,9 @@ export const App: React.FC = () => {
                 </div>
               )}
 
-              {dictionary.length > 0 && (
-                <div style={{ fontSize: 10, color: '#475569', lineHeight: 1.5 }}>
-                  Keep this list focused — a very long list can make the model write these words when you didn't say them.
+              {dictionary.length > 12 && (
+                <div style={{ fontSize: 10.5, color: '#475569' }}>
+                  Long lists reduce accuracy. Keep only words you actually use.
                 </div>
               )}
             </div>

@@ -24,6 +24,7 @@ export interface TextInjectionResult {
 }
 
 let automationPermissionShown = false;
+let accessibilityPromptShown = false;
 
 function getPasteHelperPath(): string {
   const isDev = process.env.VITE_DEV_SERVER_URL !== undefined || !app.isPackaged;
@@ -131,7 +132,13 @@ export async function injectTextSystemWide(
 
   if (process.platform === 'darwin') {
     if (!systemPreferences.isTrustedAccessibilityClient(false)) {
-      systemPreferences.isTrustedAccessibilityClient(true);
+      // Passing `true` opens the system prompt. Doing that on every failed paste
+      // re-asked for permission over and over; prompt at most once per session
+      // and let the in-app banner carry the message after that.
+      if (!accessibilityPromptShown) {
+        accessibilityPromptShown = true;
+        systemPreferences.isTrustedAccessibilityClient(true);
+      }
       if (!automationPermissionShown) {
         automationPermissionShown = true;
         console.log('\n================================================================');
