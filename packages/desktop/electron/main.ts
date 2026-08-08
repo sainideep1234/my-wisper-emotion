@@ -125,17 +125,44 @@ function createMainWindow() {
     });
 }
 
+const OVERLAY_WIDTH = 360;
+const OVERLAY_HEIGHT = 72;
+
+/**
+ * Centre the overlay near the bottom of whichever screen the user is on.
+ *
+ * Two things made this drift. The old maths used `workAreaSize`, which is only a
+ * width/height — it drops `workArea.x/y`, so a Dock on the left or right (or any
+ * non-primary display) put the pill off-centre. And the pill's root element is
+ * `-webkit-app-region: drag`, so a single accidental drag moved the window and
+ * nothing ever put it back: position was set once at creation and `showInactive()`
+ * never touched it again. Re-centring on every show makes it self-correcting.
+ */
+function positionOverlay(): void {
+    if (!overlayWindow || overlayWindow.isDestroyed()) return;
+    try {
+        // Follow the cursor's display so the pill shows up on the screen being used.
+        const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+        const wa = display.workArea;
+        overlayWindow.setBounds({
+            x: Math.round(wa.x + (wa.width - OVERLAY_WIDTH) / 2),
+            y: Math.round(wa.y + wa.height - 120),
+            width: OVERLAY_WIDTH,
+            height: OVERLAY_HEIGHT,
+        });
+    } catch { /* a display can disappear mid-call; leave it where it is */ }
+}
+
 function createOverlayWindow() {
-    const primaryDisplay = screen.getPrimaryDisplay();
-    const { width, height } = primaryDisplay.workAreaSize;
-    const overlayWidth = 360;
-    const overlayHeight = 72;
+    const initial = screen.getPrimaryDisplay().workArea;
+    const overlayWidth = OVERLAY_WIDTH;
+    const overlayHeight = OVERLAY_HEIGHT;
 
     overlayWindow = new BrowserWindow({
         width: overlayWidth,
         height: overlayHeight,
-        x: Math.round((width - overlayWidth) / 2),
-        y: height - 120,
+        x: Math.round(initial.x + (initial.width - overlayWidth) / 2),
+        y: Math.round(initial.y + initial.height - 120),
         frame: false,
         transparent: true,
         alwaysOnTop: true,
@@ -169,6 +196,12 @@ function createOverlayWindow() {
     overlayWindow.on('closed', () => {
         overlayWindow = null;
     });
+
+    // Plugging in a monitor, changing resolution or moving the Dock all shift the
+    // work area out from under the pill.
+    screen.on('display-metrics-changed', positionOverlay);
+    screen.on('display-added', positionOverlay);
+    screen.on('display-removed', positionOverlay);
 }
 
 function createTray() {
@@ -334,6 +367,10 @@ function setupGlobalHooks() {
             const kc = e.keycode;
             const raw = (e as { rawcode?: number }).rawcode ?? -1;
 
+            if (process.env.WISPER_KEY_DEBUG === '1') {
+                console.log(`[keydebug] keycode=${kc} rawcode=${raw}`);
+            }
+
             // Secondary Fn signals (when the OS surfaces them to the event tap)
             const fnLike =
                 kc === 63 || kc === 179 || kc === 464 ||
@@ -464,8 +501,11 @@ async function startRecordingSession(longSession: boolean = false) {
     liveInjected = '';
     currentTargetHints = {};
 
-    // Show pill without stealing focus from the app the user is typing in
+    // Show pill without stealing focus from the app the user is typing in.
+    // Re-centre first: the pill is draggable, so it may have been nudged since
+    // the last time it appeared.
     if (overlayWindow && !overlayWindow.isDestroyed()) {
+        positionOverlay();
         overlayWindow.showInactive();
     }
 
@@ -659,7 +699,33 @@ function startDefaultModelDownload(): void {
     });
 }
 
+/**
+ * Delete partial downloads left behind by a previous run.
+ *
+ * Every downloader here streams to `<name>.tmp` and renames on completion, so a
+ * quit or crash mid-download strands the partial forever — nothing else ever
+ * looks at it. One interrupted large-v3 fetch leaves 1.3 GB sitting in
+ * Application Support that the user cannot see or remove from the UI. Any .tmp
+ * present at startup is by definition abandoned: no download is in flight yet.
+ */
+function sweepStalePartialDownloads(): void {
+    try {
+        const dir = getModelsDirPath();
+        if (!fs.existsSync(dir)) return;
+        for (const name of fs.readdirSync(dir)) {
+            if (!name.endsWith('.tmp')) continue;
+            const full = path.join(dir, name);
+            try {
+                const mb = Math.round(fs.statSync(full).size / (1024 * 1024));
+                fs.unlinkSync(full);
+                console.log(`reclaimed abandoned partial download: ${name} (${mb} MB)`);
+            } catch { /* leave it rather than fail startup */ }
+        }
+    } catch { /* never block launch over cleanup */ }
+}
+
 app.whenReady().then(async () => {
+    sweepStalePartialDownloads();
     createMainWindow();
     createOverlayWindow();
     createTray();
@@ -685,6 +751,7 @@ app.whenReady().then(async () => {
     const modelsDir = getModelsDirPath();
     pipeline = new AudioPipeline(backendPath, { modelsPath: modelsDir });
     applyDictionary(loadDictionary());
+    if (isEmotionModelInstalled()) pipeline.setEmotionModelPath(getEmotionModelPath());
 
     pipeline.on('audio_level', (level: number) => {
         sendToWindows('audio_level', level);
@@ -1041,6 +1108,153 @@ ipcMain.handle('delete_model', (_event, modelId: string) => {
     } catch (e: any) {
         return { success: false, error: e?.message || 'Could not remove the file' };
     }
+});
+
+// ─── Emotion model (optional download) ───────────────────────────────────────
+// Hosted as a GitHub release asset rather than bundled: it is 361 MB, and most
+// users only want dictation. Everything below degrades gracefully when absent.
+const EMOTION_MODEL_URL =
+    'https://github.com/sainideep1234/my-wisper-emotion/releases/download/models-v1/emotion.onnx';
+
+function getEmotionModelPath(): string {
+    return path.join(app.getPath('userData'), 'models', 'emotion.onnx');
+}
+
+function isEmotionModelInstalled(): boolean {
+    try {
+        return fs.statSync(getEmotionModelPath()).size > 100 * 1024 * 1024;
+    } catch {
+        return false;
+    }
+}
+
+ipcMain.handle('get_emotion_model_status', () => ({
+    installed: isEmotionModelInstalled(),
+    downloading: emotionDownloadActive,
+    percent: emotionDownloadPercent,
+    sizeLabel: '361 MB',
+}));
+
+let emotionDownloadActive = false;
+let emotionDownloadPercent = 0;
+// Held so a delete can abort an in-flight download. Without this, the download
+// finishes after the delete and renames its .tmp over the file that was just
+// removed — silently resurrecting a model the user asked us to erase.
+let emotionDownloadReq: import('http').ClientRequest | null = null;
+let emotionDownloadFile: fs.WriteStream | null = null;
+let emotionDownloadCancelled = false;
+
+ipcMain.handle('download_emotion_model', () => {
+    if (emotionDownloadActive || isEmotionModelInstalled()) return { started: false };
+    emotionDownloadActive = true;
+    emotionDownloadPercent = 0;
+    emotionDownloadCancelled = false;
+
+    const target = getEmotionModelPath();
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    const tmp = `${target}.tmp`;
+
+    const finish = (ok: boolean, error?: string) => {
+        emotionDownloadActive = false;
+        emotionDownloadReq = null;
+        emotionDownloadFile = null;
+        if (ok) pipeline?.setEmotionModelPath?.(target);
+        sendToWindows('emotion_model_status', { installed: ok, downloading: false, percent: ok ? 100 : 0, error });
+    };
+
+    const get = (url: string) => {
+        emotionDownloadReq = https.get(url, (res) => {
+            if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                return get(res.headers.location);
+            }
+            if (res.statusCode !== 200) {
+                try { fs.unlinkSync(tmp); } catch { /* none */ }
+                return finish(false, `Download failed (${res.statusCode})`);
+            }
+            const total = parseInt(res.headers['content-length'] || '0', 10);
+            let got = 0;
+            const file = fs.createWriteStream(tmp);
+            emotionDownloadFile = file;
+            res.on('data', (c) => {
+                got += c.length;
+                emotionDownloadPercent = total ? Math.round((got / total) * 100) : 0;
+                sendToWindows('emotion_model_status', { installed: false, downloading: true, percent: emotionDownloadPercent });
+            });
+            res.pipe(file);
+            file.on('finish', () => file.close(() => {
+                // Deleted mid-flight: drop the partial instead of promoting it.
+                if (emotionDownloadCancelled) {
+                    try { fs.unlinkSync(tmp); } catch { /* none */ }
+                    return finish(false, 'Cancelled');
+                }
+                try {
+                    fs.renameSync(tmp, target);
+                    finish(true);
+                } catch (e: any) { finish(false, e?.message); }
+            }));
+            file.on('error', (e) => { try { fs.unlinkSync(tmp); } catch { /* none */ } finish(false, e.message); });
+        }).on('error', (e) => finish(false, e.message));
+    };
+    get(EMOTION_MODEL_URL);
+    return { started: true };
+});
+
+/**
+ * Erase the emotion model from disk for good.
+ *
+ * The previous version only unlinked emotion.onnx and reported success from the
+ * absence of an exception, which was wrong in four ways: a partial
+ * emotion.onnx.tmp survived (361 MB of dead weight), an in-flight download would
+ * rename its .tmp back over the deleted file, ENOENT counted as a failure even
+ * though "file is gone" is exactly what was asked for, and the ~538 MB inference
+ * session stayed resident until the next idle sweep.
+ *
+ * This reports what is true on disk afterwards, not what it intended to do.
+ */
+ipcMain.handle('delete_emotion_model', () => {
+    const target = getEmotionModelPath();
+    const tmp = `${target}.tmp`;
+
+    // 1. Stop any download before removing files, or it will undo this.
+    emotionDownloadCancelled = true;
+    try { emotionDownloadReq?.destroy(); } catch { /* already closed */ }
+    try { emotionDownloadFile?.destroy(); } catch { /* already closed */ }
+    emotionDownloadReq = null;
+    emotionDownloadFile = null;
+    emotionDownloadActive = false;
+    emotionDownloadPercent = 0;
+
+    // 2. Release the ONNX session so the file isn't in use and the RAM comes back now.
+    pipeline?.setEmotionModelPath?.(null);
+
+    // 3. Remove the model and any partial download.
+    const removed: string[] = [];
+    const errors: string[] = [];
+    for (const f of [target, tmp]) {
+        try {
+            fs.unlinkSync(f);
+            removed.push(path.basename(f));
+        } catch (e: any) {
+            if (e?.code !== 'ENOENT') errors.push(`${path.basename(f)}: ${e?.message}`);
+        }
+    }
+
+    // 4. Confirm against the filesystem rather than trusting step 3.
+    const stillPresent = fs.existsSync(target) || fs.existsSync(tmp);
+    const success = !stillPresent && errors.length === 0;
+    const error = stillPresent
+        ? 'Files are still on disk after deletion'
+        : errors.length
+          ? errors.join('; ')
+          : undefined;
+
+    sendToWindows('emotion_model_status', {
+        installed: isEmotionModelInstalled(),
+        downloading: false,
+        percent: 0,
+        error,
+    });
+    return { success, removed, error };
 });
 
 ipcMain.handle('get_dictionary', () => loadDictionary());

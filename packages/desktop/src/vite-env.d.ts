@@ -5,6 +5,10 @@ export interface ElectronAPI {
     selectModel: (modelId: string) => Promise<{ success: boolean; activeModel?: string }>;
     downloadModel: (modelId: string) => Promise<{ success: boolean; error?: string; already?: boolean }>;
     deleteModel: (modelId: string) => Promise<{ success: boolean; error?: string; models?: any[]; activeModel?: string }>;
+    getEmotionModelStatus: () => Promise<{ installed: boolean; downloading: boolean; percent: number; sizeLabel: string }>;
+    downloadEmotionModel: () => Promise<{ started: boolean }>;
+    deleteEmotionModel: () => Promise<{ success: boolean; removed?: string[]; error?: string }>;
+    onEmotionModelStatus: (callback: (d: { installed: boolean; downloading: boolean; percent: number; error?: string }) => void) => () => void;
     startDictation: (longSession?: boolean) => Promise<{ success: boolean }>;
     stopDictation: (overrideText?: string) => Promise<{ success: boolean }>;
     copyLastText: () => Promise<{ success: boolean; text?: string }>;

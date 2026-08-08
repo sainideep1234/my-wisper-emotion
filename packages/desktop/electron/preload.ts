@@ -5,6 +5,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     selectModel: (modelId: string) => ipcRenderer.invoke('select_model', modelId),
     downloadModel: (modelId: string) => ipcRenderer.invoke('download_model', modelId),
     deleteModel: (modelId: string) => ipcRenderer.invoke('delete_model', modelId),
+    getEmotionModelStatus: () => ipcRenderer.invoke('get_emotion_model_status'),
+    downloadEmotionModel: () => ipcRenderer.invoke('download_emotion_model'),
+    deleteEmotionModel: () => ipcRenderer.invoke('delete_emotion_model'),
+    onEmotionModelStatus: (callback: (d: any) => void) => {
+        const handler = (_e: any, d: any) => callback(d);
+        ipcRenderer.on('emotion_model_status', handler);
+        return () => ipcRenderer.removeListener('emotion_model_status', handler);
+    },
     startDictation: (longSession?: boolean) => ipcRenderer.invoke('start_dictation', longSession),
     stopDictation: (overrideText?: string) => ipcRenderer.invoke('stop_dictation', overrideText),
     copyLastText: () => ipcRenderer.invoke('copy_last_text'),

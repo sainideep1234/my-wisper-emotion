@@ -16,7 +16,7 @@ import { perAppRules } from './stages/per-app.ts';
 import { createDictionaryStage } from './stages/dictionary.ts';
 import { Transcriber, resolveModelPath } from './worker/transcriber.ts';
 import { UtteranceQueue, injectDeltaAfterLive, type WorkerResult } from './worker/queue.ts';
-import { detectEmotion, type EmotionResult } from './emotion.ts';
+import { detectEmotion, EmotionClassifier, type EmotionResult } from './emotion.ts';
 import { HistoryStore } from './history.ts';
 
 // esbuild CJS bundle empties import.meta — fall back to Node's require when present
@@ -142,6 +142,8 @@ export class AudioPipeline extends EventEmitter {
   private queue = new UtteranceQueue();
   private history = new HistoryStore();
   private liveEmotionInterval: any = null;
+  private emotionModelPath: string | null = null;
+  private emotionClassifier: EmotionClassifier;
   private contextPromise: Promise<UtteranceContext> | null = null;
 
   constructor(rootDir: string = process.cwd(), config?: AudioPipelineConfig) {
@@ -156,6 +158,7 @@ export class AudioPipeline extends EventEmitter {
     this.modelsPath = config?.modelsPath;
 
     this.transcriber = new Transcriber({ modelPath: '' });
+    this.emotionClassifier = new EmotionClassifier(() => loadNativeModule('onnxruntime-node', this.searchRoots()));
 
     this.chain = new Chain([
       stripFillers,
@@ -179,6 +182,20 @@ export class AudioPipeline extends EventEmitter {
     this.recorder.on('error', (msg: string) => this.emit('error', msg));
 
     this.queue.setHandler(async (job) => this.processJob(job));
+  }
+
+  /**
+   * Path to the optional ONNX emotion model, or null when it isn't installed.
+   * Emotion detection falls back to the cheap acoustic heuristic when absent,
+   * and the UI hides the tone tag entirely.
+   */
+  public setEmotionModelPath(modelPath: string | null): void {
+    this.emotionModelPath = modelPath;
+    this.emotionClassifier.setModelPath(modelPath);
+  }
+
+  public hasEmotionModel(): boolean {
+    return !!this.emotionModelPath;
   }
 
   /** Swap the dictionary stage at runtime (Settings edits apply without a restart). */
@@ -315,6 +332,8 @@ export class AudioPipeline extends EventEmitter {
     // Capture context asynchronously without blocking the recording pipeline.
     this.contextPromise = this.contextProvider.capture();
 
+    // Live preview stays on the cheap heuristic — the ONNX model runs once, on
+    // the finished utterance, in processJob.
     this.liveEmotionInterval = setInterval(() => {
       if (this.isRecording) {
         const pcm = this.recorder.snapshotUtterance();
@@ -428,7 +447,8 @@ export class AudioPipeline extends EventEmitter {
   }): Promise<WorkerResult> {
     const rawText = await this.transcriber.transcribe(job.pcm);
     const text = rawText ? await this.chain.run(rawText, job.ctx) : '';
-    const emotion = detectEmotion(job.pcm);
+    // Once per utterance, after transcription, so the two never contend for CPU.
+    const emotion = await this.emotionClassifier.classify(job.pcm);
 
     let injectText = '';
     if (text) {
@@ -472,5 +492,6 @@ export class AudioPipeline extends EventEmitter {
     }
     this.streamer?.stop();
     this.recorder.stopMic();
+    void this.emotionClassifier.unload();
   }
 }

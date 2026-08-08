@@ -58,8 +58,15 @@ interface EmotionData {
 }
 
 // ── Strict Color System (NO purple, NO orange, NO red, NO gradients) ──────
+// Angry/Sad stay inside the same palette rather than reaching for red. Valence
+// is carried by the label and icon; colour only encodes arousal, so the page
+// reads as one system instead of a traffic light.
 export const getEmotionColor = (label?: string): string => {
   switch (label) {
+    case 'Angry':
+      return '#0EA5E9'; // Deep Cyan — high arousal
+    case 'Sad':
+      return '#94A3B8'; // Cool Slate — low arousal
     case 'Energetic':
       return '#38BDF8'; // Sky Cyan
     case 'Happy':
@@ -87,6 +94,10 @@ const EmotionIcon = ({
 }) => {
   const c = color ?? getEmotionColor(label);
   switch (label) {
+    case 'Angry':
+      return <IconFire size={size} color={c} />;
+    case 'Sad':
+      return <IconMoon size={size} color={c} />;
     case 'Energetic':
       return <IconBolt size={size} color={c} />;
     case 'Happy':
@@ -103,7 +114,43 @@ const EmotionIcon = ({
   }
 };
 
-const ALL_EMOTIONS = ['Energetic', 'Happy', 'Focused', 'Calm', 'Thoughtful', 'Neutral'];
+/**
+ * The four classes the ONNX model can actually emit. The tone page is built
+ * from these alone — showing labels the model can never produce would leave
+ * dead tiles on screen and imply the model considered something it didn't.
+ */
+const TONE_CLASSES = ['Neutral', 'Happy', 'Angry', 'Sad'] as const;
+
+/** Below this the model is close to guessing, so the UI stops asserting. */
+const LOW_CONFIDENCE = 0.5;
+
+// ── Overlay waveform tuning ──────────────────────────────────────────────────
+// The engine sends min(1, rms*5) every 20 ms; ordinary speech lands around
+// 0.1–0.4 and a quiet voice near 0.06, so the mapping has to lift the bottom of
+// that range hard or the bars never leave the floor.
+const WAVE_BARS = 14;
+/** Centre-weighted envelope. Fixed, so only the mic drives motion. */
+const WAVE_MULTIPLIERS = Array.from({ length: WAVE_BARS }, (_, i) =>
+  0.45 + 0.55 * Math.sin(((i + 0.5) / WAVE_BARS) * Math.PI),
+);
+const BAR_REST = 3;
+const BAR_MAX = 22;
+/** <1 lifts quiet speech: 0.10 → 0.37, 0.25 → 0.54, 0.50 → 0.73 of full scale. */
+const WAVE_CURVE = 0.45;
+/** With BAR_REST this lets a normal voice reach most of BAR_MAX. */
+const WAVE_GAIN = 30;
+/** Near-instant rise so the bars move on the first syllable... */
+const ATTACK = 0.6;
+/** ...and a slower fall so they settle instead of flickering. */
+const RELEASE = 0.13;
+const SPEAKING_THRESHOLD = 0.03;
+
+const TONE_BLURB: Record<string, string> = {
+  Neutral: 'Level delivery — the default for most dictation',
+  Happy: 'Brighter pitch and pace',
+  Angry: 'Loud, sharp delivery. Often just emphasis or a noisy room',
+  Sad: 'Quieter, flatter delivery. Also reads as tired or unsure',
+};
 
 export const App: React.FC = () => {
   // Check if running inside the floating overlay window
@@ -117,9 +164,15 @@ export const App: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [isLongSession, setIsLongSession] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [audioLevel, setAudioLevel] = useState<number>(0);
-  const [smoothLevel, setSmoothLevel] = useState(0);
+  // The waveform is driven imperatively (see the rAF effect). Only this boolean
+  // is React state — everything else would re-render the overlay at 60 fps.
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const rawLevelRef = useRef(0);
   const smoothLevelRef = useRef(0);
+  const isSpeakingRef = useRef(false);
+  const isRecordingRef = useRef(false);
+  const isProcessingRef = useRef(false);
+  const barRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [liveEmotion, setLiveEmotion] = useState<EmotionData | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState('base.en');
@@ -168,22 +221,71 @@ export const App: React.FC = () => {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [modelError, setModelError] = useState<string | null>(null);
 
-  // Smooth audio level for overlay wave animation (Whisper Flow style)
+  // Emotion model is an optional 361 MB download; everything degrades without it
+  const [emotionError, setEmotionError] = useState<string | null>(null);
+  const [emotionModel, setEmotionModel] = useState<{ installed: boolean; downloading: boolean; percent: number }>(
+    { installed: false, downloading: false, percent: 0 },
+  );
+
+  // Keep the animation loop's inputs in refs. Reading these from state would put
+  // them in the effect's dependency array, which is what made the waveform lag:
+  // see the comment on the rAF effect below.
+  useEffect(() => {
+    isRecordingRef.current = isRecording;
+    isProcessingRef.current = isProcessing;
+    if (!isRecording) rawLevelRef.current = 0;
+  }, [isRecording, isProcessing]);
+
+  /**
+   * Drive the overlay waveform.
+   *
+   * This used to list `audioLevel` as a dependency. The engine emits a level
+   * every 20 ms, so the effect tore down and rebuilt the rAF loop 50 times a
+   * second — the smoothing accumulator never got to run freely, and every frame
+   * called setSmoothLevel, re-rendering the whole overlay at 60 fps. The result
+   * was a waveform that visibly trailed the voice.
+   *
+   * Now the loop is created once and reads the latest level from a ref, and bar
+   * heights are written straight to the DOM. React only re-renders when the
+   * speaking/idle boolean actually flips.
+   */
   useEffect(() => {
     if (!isOverlay) return;
     let raf = 0;
     const tick = () => {
-      const target = isRecording ? audioLevel : 0;
-      smoothLevelRef.current += (target - smoothLevelRef.current) * 0.25;
-      if (Math.abs(smoothLevelRef.current - target) < 0.001) {
-        smoothLevelRef.current = target;
+      const target = isRecordingRef.current ? rawLevelRef.current : 0;
+      const cur = smoothLevelRef.current;
+      // Asymmetric: snap up so onset is immediate, ease down so it isn't jittery.
+      const k = target > cur ? ATTACK : RELEASE;
+      let next = cur + (target - cur) * k;
+      if (Math.abs(next - target) < 0.002) next = target;
+      smoothLevelRef.current = next;
+
+      const speaking = next > SPEAKING_THRESHOLD;
+      if (speaking !== isSpeakingRef.current) {
+        isSpeakingRef.current = speaking;
+        setIsSpeaking(speaking);
       }
-      setSmoothLevel(smoothLevelRef.current);
+
+      const processing = isProcessingRef.current;
+      const recording = isRecordingRef.current;
+      for (let i = 0; i < barRefs.current.length; i++) {
+        const el = barRefs.current[i];
+        if (!el) continue;
+        const mult = WAVE_MULTIPLIERS[i]!;
+        let h = BAR_REST;
+        if (processing) {
+          h = BAR_REST + 6 * mult;
+        } else if (recording && speaking) {
+          h = BAR_REST + Math.pow(next, WAVE_CURVE) * WAVE_GAIN * mult;
+        }
+        el.style.height = `${Math.min(BAR_MAX, h)}px`;
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [isOverlay, audioLevel, isRecording]);
+  }, [isOverlay]);
 
   // Transparent window chrome for the floating overlay (macOS panel)
   useEffect(() => {
@@ -273,6 +375,16 @@ export const App: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    window.electronAPI?.getEmotionModelStatus?.().then((st) => {
+      if (st) setEmotionModel({ installed: st.installed, downloading: st.downloading, percent: st.percent });
+    });
+    const un = window.electronAPI?.onEmotionModelStatus?.((d) =>
+      setEmotionModel({ installed: d.installed, downloading: d.downloading, percent: d.percent }),
+    );
+    return () => un?.();
+  }, []);
+
   const handleOpenKeyboardSettings = () => {
     window.electronAPI?.openExternalLink?.('x-apple.systempreferences:com.apple.preference.keyboard');
   };
@@ -334,7 +446,9 @@ export const App: React.FC = () => {
     refreshModels();
 
     const unsubAudio = window.electronAPI.onAudioLevel?.((level) => {
-      setAudioLevel(level);
+      // Straight to a ref — a setState here would queue a render per 20 ms frame
+      // and put the level a frame or more behind the voice.
+      rawLevelRef.current = level;
     });
 
     const unsubReady = window.electronAPI.onPipelineReady((data) => {
@@ -390,7 +504,7 @@ export const App: React.FC = () => {
       if (!data.isRecording) {
         if (!(data as { isProcessing?: boolean }).isProcessing) {
           setLiveEmotion(null);
-          setAudioLevel(0);
+          rawLevelRef.current = 0;
           setPartialText('');
         }
       }
@@ -573,29 +687,42 @@ export const App: React.FC = () => {
   const currentEmotionLabel = liveEmotion?.label || 'Neutral';
 
   const totalLogs = history.length;
+
+  // ── Tone analytics (this session only — history is not persisted) ─────────
+  // Anything the model scored, newest first. Entries without an emotion object
+  // predate the model being installed and are excluded rather than counted as
+  // Neutral, which would invent a finding.
+  const toned = history.filter((h) => h.emotion && TONE_CLASSES.includes(h.emotion.label as any));
+
   const emotionCounts: Record<string, number> = {};
-  ALL_EMOTIONS.forEach((e) => (emotionCounts[e] = 0));
-  history.forEach((item) => {
-    const lbl = item.emotion?.label || 'Neutral';
-    emotionCounts[lbl] = (emotionCounts[lbl] || 0) + 1;
+  const confidenceSums: Record<string, number> = {};
+  TONE_CLASSES.forEach((e) => {
+    emotionCounts[e] = 0;
+    confidenceSums[e] = 0;
   });
+  toned.forEach((item) => {
+    const lbl = item.emotion!.label;
+    emotionCounts[lbl] = (emotionCounts[lbl] || 0) + 1;
+    confidenceSums[lbl] = (confidenceSums[lbl] || 0) + (item.emotion!.confidence || 0);
+  });
+
+  const tonedCount = toned.length;
+  const avgConfidence = tonedCount
+    ? toned.reduce((a, h) => a + (h.emotion!.confidence || 0), 0) / tonedCount
+    : 0;
+  const uncertainCount = toned.filter((h) => (h.emotion!.confidence || 0) < LOW_CONFIDENCE).length;
+  const dominantTone = tonedCount
+    ? TONE_CLASSES.reduce((a, b) => (emotionCounts[b]! > emotionCounts[a]! ? b : a))
+    : null;
+  // Oldest → newest so the strip reads left-to-right like a timeline.
+  const toneTimeline = [...toned].reverse().slice(-48);
 
   // ───────────────────────────────────────────────────────────────────────────
   // 1. FLOATING OVERLAY VIEW (`?overlay=1`) — Wispr Flow style pill + wave bars
   // ───────────────────────────────────────────────────────────────────────────
   if (isOverlay) {
-    const WAVE_BARS = 14;
-    // Stable centre-weighted envelope. Previously this used Date.now(), so bars
-    // drifted on every render even in silence; now the shape is fixed and only
-    // the mic level drives motion.
-    const waveMultipliers = Array.from({ length: WAVE_BARS }, (_, i) =>
-      0.45 + 0.55 * Math.sin(((i + 0.5) / WAVE_BARS) * Math.PI),
-    );
-    // audio_level is min(1, rms*5); ordinary speech sits around 0.1–0.4, so the
-    // old `level * 20` mapping never cleared the 4px floor. Raise it with a
-    // perceptual curve so quiet speech is still clearly visible.
-    const SPEAKING_THRESHOLD = 0.04;
-    const isSpeaking = smoothLevel > SPEAKING_THRESHOLD;
+    // Bar geometry and motion live in the rAF effect above — heights are written
+    // directly to these nodes, never through React.
     const barColor = isRecording || isProcessing ? currentEmotionColor : '#64748B';
     const statusLabel = isProcessing
       ? 'Processing…'
@@ -683,27 +810,21 @@ export const App: React.FC = () => {
 
               {/* Animated waveform */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 2, height: 22 }}>
-                {waveMultipliers.map((mult, i) => {
-                  const REST = 3;
-                  let h = REST;
-                  if (isProcessing) {
-                    // Gentle standing wave while transcribing — no mic input to show.
-                    h = REST + 6 * mult;
-                  } else if (isRecording && isSpeaking) {
-                    // pow() lifts quiet speech; 0.2 -> ~0.38 instead of 0.2
-                    h = REST + Math.pow(smoothLevel, 0.6) * 19 * mult;
-                  }
+                {WAVE_MULTIPLIERS.map((_, i) => {
                   const lit = isRecording || isProcessing;
                   return (
                     <div
                       key={i}
+                      ref={(el) => { barRefs.current[i] = el; }}
                       style={{
                         width: 2.5,
-                        height: `${Math.min(22, h)}px`,
+                        height: `${BAR_REST}px`,
                         borderRadius: 2,
                         background: lit ? '#FFFFFF' : 'rgba(255,255,255,0.28)',
                         opacity: lit && !isSpeaking && !isProcessing ? 0.5 : 1,
-                        transition: 'height 0.07s ease-out, opacity 0.2s',
+                        // No height transition: the rAF loop already interpolates,
+                        // and a CSS ease on top of it re-introduces visible lag.
+                        transition: 'opacity 0.2s, background 0.2s',
                       }}
                     />
                   );
@@ -722,7 +843,7 @@ export const App: React.FC = () => {
 
             {/* Right: emotion tag or shortcut hint */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, WebkitAppRegion: 'no-drag', flexShrink: 0 } as any}>
-              {isRecording && liveEmotion ? (
+              {isRecording && liveEmotion && emotionModel.installed ? (
                 <div style={{
                   padding: '3px 8px', borderRadius: 999,
                   background: `${currentEmotionColor}1f`,
@@ -1609,27 +1730,255 @@ export const App: React.FC = () => {
           <div>
             <div className="flex items-start justify-between mb-6">
               <div>
-                <h1 className="text-xl font-bold text-neutral-200 tracking-tight leading-tight">Tone &amp; Emotion Analysis</h1>
-                <p className="text-xs text-neutral-500 mt-1 leading-relaxed">Acoustic tone classification and history</p>
+                <h1 className="text-xl font-bold text-neutral-200 tracking-tight leading-tight">Tone</h1>
+                <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
+                  {emotionModel.installed ? 'Detected from your voice' : 'Optional — off by default'}
+                </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4 mb-6">
-              {ALL_EMOTIONS.map((emo) => {
-                const count = emotionCounts[emo] || 0;
-                const color = getEmotionColor(emo);
-                return (
-                  <div key={emo} className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-3.5" style={{ borderLeft: `3px solid ${color}` }}>
-                    <div className="flex items-center justify-between gap-2">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <EmotionIcon label={emo} size={16} color={color} />
-                        <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">{emo}</span>
+            {/* Optional model. Without it no tone tag appears anywhere. */}
+            <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 mb-6 flex items-center justify-between gap-4">
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9' }}>
+                  Tone detection
+                  {emotionModel.installed && (
+                    <span style={{ fontSize: 10, fontWeight: 600, color: '#10B981', background: '#10B9811f', padding: '2px 6px', borderRadius: 999, marginLeft: 8 }}>
+                      On
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 11.5, color: '#94A3B8', marginTop: 3 }}>
+                  {emotionModel.downloading
+                    ? `Downloading… ${emotionModel.percent}%`
+                    : emotionModel.installed
+                      ? 'Runs on your Mac. Delete to free 361 MB.'
+                      : 'One-time 361 MB download. Runs offline afterwards.'}
+                </div>
+              </div>
+              {emotionModel.downloading ? (
+                <span style={{ fontSize: 12, color: '#94A3B8', flexShrink: 0 }}>{emotionModel.percent}%</span>
+              ) : emotionModel.installed ? (
+                <button
+                  onClick={async () => {
+                    setEmotionError(null);
+                    const res = await window.electronAPI?.deleteEmotionModel?.();
+                    // Never assume the delete worked — ask the main process what
+                    // is actually on disk now. The old code flipped straight to
+                    // "Download" even when the file was still there.
+                    const st = await window.electronAPI?.getEmotionModelStatus?.();
+                    setEmotionModel({ installed: st?.installed ?? false, downloading: false, percent: 0 });
+                    if (res && res.success === false) {
+                      setEmotionError(res.error || 'Could not delete the model');
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-md bg-[#0A0A0A] border border-neutral-800 text-neutral-400 text-[11px] font-medium cursor-pointer whitespace-nowrap hover:bg-white/5"
+                  style={{ flexShrink: 0 }}
+                >
+                  Remove
+                </button>
+              ) : (
+                <button
+                  onClick={() => { setEmotionModel((s) => ({ ...s, downloading: true })); void window.electronAPI?.downloadEmotionModel?.(); }}
+                  className="select-btn active"
+                  style={{ flexShrink: 0 }}
+                >
+                  Download
+                </button>
+              )}
+            </div>
+
+            {emotionError && (
+              <div
+                className="bg-[#0A0A0A] border border-neutral-900 rounded-xl px-4 py-3 mb-6"
+                style={{ borderLeft: '3px solid #94A3B8' }}
+              >
+                <div style={{ fontSize: 11.5, color: '#CBD5E1', fontWeight: 600 }}>Delete did not complete</div>
+                <div style={{ fontSize: 11, color: '#64748B', marginTop: 3 }}>{emotionError}</div>
+              </div>
+            )}
+
+            {/* Nothing below this point means anything without the model. */}
+            {!emotionModel.installed ? (
+              <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-8 text-center">
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+                  <IconHeart size={22} color="#334155" />
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#94A3B8' }}>Tone detection is off</div>
+                <p style={{ fontSize: 11.5, color: '#64748B', marginTop: 6, maxWidth: 420, marginInline: 'auto', lineHeight: 1.6 }}>
+                  Download the model above to label each dictation. Dictation itself works exactly
+                  the same without it — no tone tag is shown rather than a guessed one.
+                </p>
+              </div>
+            ) : tonedCount === 0 ? (
+              <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-8 text-center">
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+                  <IconWaves size={22} color="#334155" />
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#94A3B8' }}>No dictations yet this session</div>
+                <p style={{ fontSize: 11.5, color: '#64748B', marginTop: 6, maxWidth: 420, marginInline: 'auto', lineHeight: 1.6 }}>
+                  Hold <span style={{ color: '#94A3B8', fontWeight: 600 }}>Fn</span> and speak. Each
+                  utterance gets scored once it finishes, and the breakdown appears here.
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* ── Headline numbers ─────────────────────────────────── */}
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3 mb-4">
+                  {[
+                    { label: 'Analysed', value: String(tonedCount), sub: 'this session' },
+                    {
+                      label: 'Dominant',
+                      value: dominantTone ?? '—',
+                      sub: `${Math.round((emotionCounts[dominantTone!]! / tonedCount) * 100)}% of utterances`,
+                      color: getEmotionColor(dominantTone ?? undefined),
+                    },
+                    {
+                      label: 'Avg confidence',
+                      value: `${Math.round(avgConfidence * 100)}%`,
+                      sub: avgConfidence < 0.6 ? 'low — treat as a hint' : 'reasonable',
+                    },
+                    {
+                      label: 'Uncertain',
+                      value: String(uncertainCount),
+                      sub: `below ${Math.round(LOW_CONFIDENCE * 100)}% confidence`,
+                    },
+                  ].map((s) => (
+                    <div key={s.label} className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-4">
+                      <div className="text-[10px] font-semibold text-neutral-600 uppercase tracking-wider">{s.label}</div>
+                      <div style={{ fontSize: 20, fontWeight: 700, color: s.color ?? '#F1F5F9', marginTop: 6, lineHeight: 1.1 }}>
+                        {s.value}
                       </div>
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-neutral-900 text-neutral-300 border border-neutral-800 whitespace-nowrap" style={{ color }}>{count} logs</span>
+                      <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 3 }}>{s.sub}</div>
                     </div>
+                  ))}
+                </div>
+
+                {/* ── Distribution ─────────────────────────────────────── */}
+                <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 mb-4">
+                  <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider mb-3">Distribution</div>
+                  <div style={{ display: 'flex', height: 8, borderRadius: 999, overflow: 'hidden', background: '#111', marginBottom: 16 }}>
+                    {TONE_CLASSES.map((emo) => {
+                      const pct = (emotionCounts[emo]! / tonedCount) * 100;
+                      return pct > 0 ? (
+                        <div key={emo} style={{ width: `${pct}%`, background: getEmotionColor(emo) }} title={`${emo} ${Math.round(pct)}%`} />
+                      ) : null;
+                    })}
                   </div>
-                );
-              })}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {TONE_CLASSES.map((emo) => {
+                      const count = emotionCounts[emo]!;
+                      const pct = (count / tonedCount) * 100;
+                      const color = getEmotionColor(emo);
+                      const avg = count ? confidenceSums[emo]! / count : 0;
+                      return (
+                        <div key={emo} style={{ opacity: count ? 1 : 0.4 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <EmotionIcon label={emo} size={14} color={color} />
+                            <span style={{ fontSize: 12, fontWeight: 600, color: '#E2E8F0', minWidth: 62 }}>{emo}</span>
+                            <span style={{ fontSize: 11, color: '#64748B', flex: 1, minWidth: 0 }}>{TONE_BLURB[emo]}</span>
+                            <span style={{ fontSize: 11, color: '#94A3B8', whiteSpace: 'nowrap' }}>
+                              {count} · {Math.round(pct)}%
+                            </span>
+                            <span style={{ fontSize: 10.5, color: '#475569', whiteSpace: 'nowrap', minWidth: 74, textAlign: 'right' }}>
+                              {count ? `${Math.round(avg * 100)}% conf` : 'not seen'}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* ── Timeline: how tone moved across the session ──────── */}
+                <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 mb-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Across the session</div>
+                    <span style={{ fontSize: 10.5, color: '#475569' }}>oldest → newest</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 3, alignItems: 'flex-end', height: 40 }}>
+                    {toneTimeline.map((h, i) => {
+                      const conf = h.emotion!.confidence || 0;
+                      return (
+                        <div
+                          key={h.id + i}
+                          title={`${h.emotion!.label} · ${Math.round(conf * 100)}% · ${h.timestamp}`}
+                          style={{
+                            flex: 1,
+                            minWidth: 3,
+                            height: `${Math.max(20, conf * 100)}%`,
+                            background: getEmotionColor(h.emotion!.label),
+                            opacity: conf < LOW_CONFIDENCE ? 0.35 : 1,
+                            borderRadius: 2,
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                  <div style={{ fontSize: 10.5, color: '#475569', marginTop: 10 }}>
+                    Bar height is confidence; faded bars are below {Math.round(LOW_CONFIDENCE * 100)}%.
+                  </div>
+                </div>
+
+                {/* ── Recent, with the text that produced each call ─────── */}
+                <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 mb-4">
+                  <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider mb-3">Recent utterances</div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    {toned.slice(0, 8).map((h, i) => {
+                      const conf = h.emotion!.confidence || 0;
+                      const color = getEmotionColor(h.emotion!.label);
+                      return (
+                        <div
+                          key={h.id}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0',
+                            borderTop: i === 0 ? 'none' : '1px solid #141414',
+                          }}
+                        >
+                          <EmotionIcon label={h.emotion!.label} size={13} color={color} />
+                          <span style={{ fontSize: 11.5, fontWeight: 600, color, minWidth: 58 }}>{h.emotion!.label}</span>
+                          <span style={{ fontSize: 11.5, color: '#94A3B8', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {h.text}
+                          </span>
+                          {conf < LOW_CONFIDENCE && (
+                            <span style={{ fontSize: 9.5, color: '#64748B', border: '1px solid #1E293B', borderRadius: 4, padding: '1px 5px', whiteSpace: 'nowrap' }}>
+                              unsure
+                            </span>
+                          )}
+                          <div style={{ width: 44, height: 3, background: '#1A1A1A', borderRadius: 999, overflow: 'hidden', flexShrink: 0 }}>
+                            <div style={{ width: `${conf * 100}%`, height: '100%', background: color }} />
+                          </div>
+                          <span style={{ fontSize: 10, color: '#475569', minWidth: 44, textAlign: 'right' }}>{h.timestamp}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* ── Honest framing. Kept on-page, not hidden behind a tooltip. ── */}
+            <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5">
+              <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider mb-3">How to read this</div>
+              <ul style={{ fontSize: 11.5, color: '#64748B', lineHeight: 1.75, paddingLeft: 16, margin: 0, listStyle: 'disc' }}>
+                <li>
+                  The model reports exactly four tones — <span style={{ color: '#94A3B8' }}>Neutral, Happy, Angry, Sad</span>.
+                  Nothing else is inferred, and nothing is shown that it didn't score.
+                </li>
+                <li>
+                  It hears <span style={{ color: '#94A3B8' }}>delivery, not meaning</span> — volume, pitch and pace. A loud
+                  room or an emphatic sentence reads as Angry; tiredness reads as Sad.
+                </li>
+                <li>
+                  Realistic accuracy for four-class speech emotion is{' '}
+                  <span style={{ color: '#94A3B8' }}>around 62–75%</span>. Roughly one call in three is wrong, so treat a
+                  single label as a hint and the distribution as the signal.
+                </li>
+                <li>
+                  Scored once per utterance on up to 8 seconds of the loudest speech, entirely on your Mac.
+                </li>
+                <li>Counts cover this session only — history isn't written to disk.</li>
+              </ul>
             </div>
           </div>
         )}
