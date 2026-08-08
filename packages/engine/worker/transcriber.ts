@@ -30,6 +30,7 @@ export class Transcriber {
   private language: string;
   private useGpu: boolean;
   private warmed = false;
+  private prompt = '';
 
   constructor(config: TranscriberConfig) {
     this.modelPath = config.modelPath;
@@ -60,6 +61,16 @@ export class Transcriber {
   setModelPath(modelPath: string) {
     this.modelPath = modelPath;
     this.warmed = false;
+  }
+
+  /**
+   * Vocabulary fed to whisper as initial_prompt. whisper.cpp caps the prompt at
+   * n_text_ctx/2 (224 tokens for these models) and silently drops the overflow,
+   * so keep it short — an over-stuffed prompt also makes the model hallucinate
+   * these words into unrelated speech.
+   */
+  setPrompt(prompt: string) {
+    this.prompt = (prompt || '').trim().slice(0, 800);
   }
 
   getModelPath(): string {
@@ -95,6 +106,7 @@ export class Transcriber {
             model: this.modelPath,
             fname_inp: 'buffer',
             pcmf32: trimmedPcm,
+            ...(this.prompt ? { prompt: this.prompt } : {}),
             use_gpu: this.useGpu,
             flash_attn: false,
             no_prints: true,

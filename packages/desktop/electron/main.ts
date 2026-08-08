@@ -3,6 +3,7 @@ import path from 'path';
 import Module from 'module';
 import https from 'https';
 import { spawn, execFile, type ChildProcess } from 'child_process';
+import fs from 'fs';
 
 
 // ─── Native Module Path Injection (MUST run before any native require) ────────
@@ -607,6 +608,7 @@ app.whenReady().then(async () => {
     const backendPath = getBackendPath();
     const modelsDir = getModelsDirPath();
     pipeline = new AudioPipeline(backendPath, { modelsPath: modelsDir });
+    applyDictionary(loadDictionary());
 
     pipeline.on('audio_level', (level: number) => {
         sendToWindows('audio_level', level);
@@ -859,6 +861,59 @@ ipcMain.handle('check_fn_key_setting', () => {
             resolve({ configured: value === 0, value: Number.isNaN(value) ? null : value });
         });
     });
+});
+
+// ─── Custom dictionary ────────────────────────────────────────────────────────
+// Persisted in userData so it survives updates. Entries do double duty: they are
+// exact post-transcription replacements AND they seed whisper's initial_prompt,
+// which biases the decoder toward these spellings so the fix often isn't needed.
+interface DictionaryEntry { from: string; to: string }
+
+function getDictionaryPath(): string {
+    return path.join(app.getPath('userData'), 'dictionary.json');
+}
+
+function loadDictionary(): DictionaryEntry[] {
+    try {
+        const raw = fs.readFileSync(getDictionaryPath(), 'utf8');
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+            .filter((e: any) => e && typeof e.from === 'string' && typeof e.to === 'string')
+            .map((e: any) => ({ from: e.from.trim(), to: e.to.trim() }))
+            .filter((e: DictionaryEntry) => e.from && e.to);
+    } catch {
+        return [];
+    }
+}
+
+function saveDictionary(entries: DictionaryEntry[]): void {
+    try {
+        fs.writeFileSync(getDictionaryPath(), JSON.stringify(entries, null, 2), 'utf8');
+    } catch (e: any) {
+        console.warn('Failed to save dictionary:', e?.message || e);
+    }
+}
+
+/** Push the dictionary into the live pipeline without needing a restart. */
+function applyDictionary(entries: DictionaryEntry[]): void {
+    const replacements: Record<string, string> = {};
+    for (const e of entries) replacements[e.from] = e.to;
+    // The corrected spellings are what we want whisper to produce in the first place.
+    const vocabulary = entries.map((e) => e.to).join(', ');
+    pipeline?.setDictionary?.({ replacements, snippets: {} });
+    pipeline?.setVocabulary?.(vocabulary);
+}
+
+ipcMain.handle('get_dictionary', () => loadDictionary());
+
+ipcMain.handle('set_dictionary', (_event, entries: DictionaryEntry[]) => {
+    const clean = (Array.isArray(entries) ? entries : [])
+        .map((e) => ({ from: String(e?.from ?? '').trim(), to: String(e?.to ?? '').trim() }))
+        .filter((e) => e.from && e.to);
+    saveDictionary(clean);
+    applyDictionary(clean);
+    return clean;
 });
 
 ipcMain.handle('open_external_link', (_event, url: string) => {

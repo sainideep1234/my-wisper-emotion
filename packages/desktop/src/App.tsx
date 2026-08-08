@@ -144,6 +144,12 @@ export const App: React.FC = () => {
   const [fnKeyGate, setFnKeyGate] = useState<'checking' | 'needed' | 'done'>('checking');
   const [fnKeyValue, setFnKeyValue] = useState<number | null>(null);
 
+  // Custom dictionary (persisted in userData by the main process)
+  const [dictionary, setDictionary] = useState<{ from: string; to: string }[]>([]);
+  const [dictFrom, setDictFrom] = useState('');
+  const [dictTo, setDictTo] = useState('');
+  const [dictSaved, setDictSaved] = useState(false);
+
   // Smooth audio level for overlay wave animation (Whisper Flow style)
   useEffect(() => {
     if (!isOverlay) return;
@@ -224,6 +230,35 @@ export const App: React.FC = () => {
 
   const handleOpenKeyboardSettings = () => {
     window.electronAPI?.openExternalLink?.('x-apple.systempreferences:com.apple.preference.keyboard');
+  };
+
+  useEffect(() => {
+    window.electronAPI?.getDictionary?.().then((entries) => {
+      if (Array.isArray(entries)) setDictionary(entries);
+    });
+  }, []);
+
+  const persistDictionary = async (next: { from: string; to: string }[]) => {
+    setDictionary(next);
+    const saved = await window.electronAPI?.setDictionary?.(next);
+    if (Array.isArray(saved)) setDictionary(saved);
+    setDictSaved(true);
+    setTimeout(() => setDictSaved(false), 1800);
+  };
+
+  const handleAddDictionaryEntry = () => {
+    const from = dictFrom.trim();
+    const to = dictTo.trim();
+    if (!from || !to) return;
+    // Replace in place if the same spoken form already exists
+    const next = [...dictionary.filter((e) => e.from.toLowerCase() !== from.toLowerCase()), { from, to }];
+    setDictFrom('');
+    setDictTo('');
+    void persistDictionary(next);
+  };
+
+  const handleRemoveDictionaryEntry = (from: string) => {
+    void persistDictionary(dictionary.filter((e) => e.from !== from));
   };
 
   useEffect(() => {
@@ -492,9 +527,17 @@ export const App: React.FC = () => {
   // ───────────────────────────────────────────────────────────────────────────
   if (isOverlay) {
     const WAVE_BARS = 14;
+    // Stable centre-weighted envelope. Previously this used Date.now(), so bars
+    // drifted on every render even in silence; now the shape is fixed and only
+    // the mic level drives motion.
     const waveMultipliers = Array.from({ length: WAVE_BARS }, (_, i) =>
-      0.35 + 0.65 * Math.abs(Math.sin((i / WAVE_BARS) * Math.PI * 2.5 + Date.now() * 0.003)),
+      0.45 + 0.55 * Math.sin(((i + 0.5) / WAVE_BARS) * Math.PI),
     );
+    // audio_level is min(1, rms*5); ordinary speech sits around 0.1–0.4, so the
+    // old `level * 20` mapping never cleared the 4px floor. Raise it with a
+    // perceptual curve so quiet speech is still clearly visible.
+    const SPEAKING_THRESHOLD = 0.04;
+    const isSpeaking = smoothLevel > SPEAKING_THRESHOLD;
     const barColor = isRecording || isProcessing ? currentEmotionColor : '#64748B';
     const statusLabel = isProcessing
       ? 'Processing…'
@@ -528,7 +571,7 @@ export const App: React.FC = () => {
         `}</style>
 
         {/* Glowing Aura Container */}
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', minWidth: 220, maxWidth: 260, height: 46, '--wave-color': currentEmotionColor } as any}>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', minWidth: 220, maxWidth: 336, height: 46, '--wave-color': currentEmotionColor } as any}>
           {isRecording && (
             <div style={{
               position: 'absolute',
@@ -557,8 +600,9 @@ export const App: React.FC = () => {
             zIndex: 1,
             transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
           } as any}>
-            {/* Mic + wave bars */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, WebkitAppRegion: 'no-drag' } as any}>
+            {/* Mic + wave bars. minWidth:0 lets this side shrink instead of
+                pushing the emotion badge past the pill's rounded edge. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '1 1 auto', overflow: 'hidden', WebkitAppRegion: 'no-drag' } as any}>
               <div style={{
                 width: 24, height: 24, borderRadius: 8, flexShrink: 0,
                 background: isRecording ? `${currentEmotionColor}22` : '#1A2132',
@@ -581,22 +625,25 @@ export const App: React.FC = () => {
               {/* Animated waveform */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 2, height: 24 }}>
                 {waveMultipliers.map((mult, i) => {
-                  const active = isRecording || isProcessing;
-                  const h = active
-                    ? Math.max(4, Math.min(20, smoothLevel * 20 * mult + (isProcessing ? 4 : 0)))
-                    : 4;
+                  const REST = 3;
+                  let h = REST;
+                  if (isProcessing) {
+                    // Gentle standing wave while transcribing — no mic input to show.
+                    h = REST + 6 * mult;
+                  } else if (isRecording && isSpeaking) {
+                    // pow() lifts quiet speech; 0.2 -> ~0.38 instead of 0.2
+                    h = REST + Math.pow(smoothLevel, 0.6) * 19 * mult;
+                  }
                   return (
                     <div
                       key={i}
                       style={{
                         width: 2.5,
-                        height: `${h}px`,
+                        height: `${Math.min(22, h)}px`,
                         borderRadius: 2,
-                        background: active ? barColor : '#3A4560',
-                        boxShadow: active ? `0 0 4px ${barColor}88` : 'none',
-                        transformOrigin: 'center bottom',
-                        transition: active ? 'height 0.06s ease-out, background 0.2s' : 'none',
-                        animation: !active ? `wispr-idle-pulse 1.4s ease-in-out ${i * 0.08}s infinite` : 'none',
+                        background: isRecording || isProcessing ? barColor : '#3A4560',
+                        boxShadow: isRecording && isSpeaking ? `0 0 5px ${barColor}aa` : 'none',
+                        transition: 'height 0.07s ease-out, background 0.2s, box-shadow 0.2s',
                       }}
                     />
                   );
@@ -606,6 +653,7 @@ export const App: React.FC = () => {
               <span style={{
                 fontSize: 11, fontWeight: 600, color: isRecording ? '#F1F5F9' : '#94A3B8',
                 whiteSpace: 'nowrap', marginLeft: 2,
+                overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0,
               }}>
                 {statusLabel}
               </span>
@@ -620,9 +668,10 @@ export const App: React.FC = () => {
                   color: currentEmotionColor, fontSize: 9, fontWeight: 600,
                   display: 'flex', alignItems: 'center', gap: 4,
                   boxShadow: `0 0 6px ${currentEmotionColor}22`,
+                  maxWidth: 104, whiteSpace: 'nowrap',
                 }}>
-                  <IconActivity size={10} color={currentEmotionColor} />
-                  <span>{currentEmotionLabel}</span>
+                  <IconActivity size={10} color={currentEmotionColor} style={{ flexShrink: 0 }} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentEmotionLabel}</span>
                 </div>
               ) : (
                 <span style={{
@@ -1542,6 +1591,106 @@ export const App: React.FC = () => {
                   {shiftCPasteEnabled ? 'Enabled' : 'Disabled'}
                 </button>
               </div>
+            </div>
+
+            {/* ── Custom dictionary ── */}
+            <div className="bg-[#0A0A0A] border border-neutral-900 rounded-xl p-5 flex flex-col gap-4" style={{ marginTop: 16 }}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    Custom Dictionary
+                    {dictSaved && (
+                      <span style={{ fontSize: 10, fontWeight: 600, color: '#10B981', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <IconCheck size={11} color="#10B981" /> Saved
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2, lineHeight: 1.5 }}>
+                    Fix words Wisper mishears. Your corrected spellings are also fed to the speech model,
+                    so it learns to get them right instead of only fixing them afterwards.
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  value={dictFrom}
+                  onChange={(e) => setDictFrom(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddDictionaryEntry(); }}
+                  placeholder="Wisper hears…  e.g. get hub"
+                  style={{
+                    flex: 1, minWidth: 0, padding: '8px 10px', borderRadius: 8,
+                    background: '#0D1017', border: '1px solid #1E2536',
+                    color: '#F1F5F9', fontSize: 12, outline: 'none',
+                  }}
+                />
+                <span style={{ color: '#475569', fontSize: 13, flexShrink: 0 }}>→</span>
+                <input
+                  value={dictTo}
+                  onChange={(e) => setDictTo(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddDictionaryEntry(); }}
+                  placeholder="should write…  e.g. GitHub"
+                  style={{
+                    flex: 1, minWidth: 0, padding: '8px 10px', borderRadius: 8,
+                    background: '#0D1017', border: '1px solid #1E2536',
+                    color: '#F1F5F9', fontSize: 12, outline: 'none',
+                  }}
+                />
+                <button
+                  className="select-btn active"
+                  onClick={handleAddDictionaryEntry}
+                  disabled={!dictFrom.trim() || !dictTo.trim()}
+                  style={{ flexShrink: 0, opacity: !dictFrom.trim() || !dictTo.trim() ? 0.45 : 1 }}
+                >
+                  Add
+                </button>
+              </div>
+
+              {dictionary.length === 0 ? (
+                <div style={{
+                  fontSize: 11, color: '#64748B', textAlign: 'center',
+                  padding: '14px 0', border: '1px dashed #1E2536', borderRadius: 8,
+                }}>
+                  No words yet. Add one above to improve accuracy.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {dictionary.map((entry) => (
+                    <div
+                      key={entry.from}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '8px 10px', borderRadius: 8,
+                        background: '#0D1017', border: '1px solid #1E2536',
+                      }}
+                    >
+                      <span style={{ fontSize: 12, color: '#94A3B8', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {entry.from}
+                      </span>
+                      <span style={{ color: '#475569', fontSize: 12, flexShrink: 0 }}>→</span>
+                      <span style={{ fontSize: 12, color: '#F1F5F9', fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {entry.to}
+                      </span>
+                      <button
+                        onClick={() => handleRemoveDictionaryEntry(entry.from)}
+                        title="Remove"
+                        style={{
+                          flexShrink: 0, background: 'transparent', border: 'none',
+                          cursor: 'pointer', padding: 4, display: 'flex', borderRadius: 6,
+                        }}
+                      >
+                        <IconTrash size={13} color="#64748B" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {dictionary.length > 0 && (
+                <div style={{ fontSize: 10, color: '#475569', lineHeight: 1.5 }}>
+                  Keep this list focused — a very long list can make the model write these words when you didn't say them.
+                </div>
+              )}
             </div>
           </div>
         )}

@@ -181,6 +181,26 @@ export class AudioPipeline extends EventEmitter {
     this.queue.setHandler(async (job) => this.processJob(job));
   }
 
+  /** Swap the dictionary stage at runtime (Settings edits apply without a restart). */
+  public setDictionary(config: { replacements?: Record<string, string>; snippets?: Record<string, string> }): void {
+    this.chain = new Chain([
+      stripFillers,
+      retractions,
+      numberedLists,
+      lightPunctuation,
+      perAppRules,
+      createDictionaryStage(config),
+    ]);
+  }
+
+  /**
+   * Words to bias whisper toward via initial_prompt. Fixes the mis-hearing at
+   * decode time instead of string-replacing it afterwards.
+   */
+  public setVocabulary(vocabulary: string): void {
+    this.transcriber.setPrompt(vocabulary);
+  }
+
   private searchRoots(): string[] {
     const roots = [
       this.rootDir,

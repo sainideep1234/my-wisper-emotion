@@ -1,6 +1,6 @@
 {
   "name": "wisper-emotion",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "private": true,
   "main": "packages/desktop/dist/electron/main.js",
   "scripts": {
@@ -19,6 +19,7 @@
     "npmRebuild": false,
     "appId": "com.wisper.emotion",
     "productName": "Wisper",
+    "afterPack": "scripts/after-pack-sign.js",
     "directories": {
       "output": "release"
     },
