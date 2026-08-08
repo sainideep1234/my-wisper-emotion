@@ -127,7 +127,7 @@ Module._nodeModulePaths = (from) => {
 if (require.main && require.main.paths) require.main.paths.unshift(nativePath);
 
 let failed = false;
-for (const name of ['naudiodon', 'segfault-handler', 'uiohook-napi']) {
+for (const name of ['naudiodon', 'segfault-handler', 'uiohook-napi', 'onnxruntime-node']) {
   try {
     require(name);
     console.log(`  OK   require('${name}') -> ${require.resolve(name)}`);
@@ -145,6 +145,27 @@ if ! WISPER_RESOURCES="$RES" ELECTRON_RUN_AS_NODE=1 "$BIN" "$RESOLVE"; then
 fi
 
 rm -f "$PROBE" "$RESOLVE"
+
+# ── 5. The helper binaries must be in the bundle ─────────────────────────────
+# Neither is a .node or .dylib, so nothing above covers them, and their absence
+# is silent in both directions: electron-builder skips a missing extraResources
+# source without failing, and main.ts only console.warn()s when the spawn fails.
+# The result is a build that looks fine and ships with auto-paste degraded to
+# clipboard-only (paste-helper) or the Fn hotkey dead (fn-poll).
+echo "── checking the helper binaries shipped ──"
+for helper in fn-poll paste-helper; do
+  f="$RES/bin/$helper"
+  if [[ ! -f "$f" ]]; then
+    echo "  FAIL bin/$helper missing from the bundle" >&2
+    echo "       build it (bun run build:$helper) and repackage" >&2
+    FAILED=1
+  elif [[ ! -x "$f" ]]; then
+    echo "  FAIL bin/$helper is present but not executable" >&2
+    FAILED=1
+  else
+    echo "  OK   bin/$helper ($(lipo -archs "$f" 2>/dev/null || echo 'unknown arch'))"
+  fi
+done
 
 if [[ "$FAILED" == "1" ]]; then
   echo "" >&2
